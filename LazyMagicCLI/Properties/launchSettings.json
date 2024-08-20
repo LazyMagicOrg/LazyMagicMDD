@@ -1,0 +1,49 @@
+{
+  "profiles": {
+    "LazyMagicApp": {
+      "commandName": "Project",
+      "commandLineArgs": "projects",
+      "workingDirectory": "..\\..\\..\\BecknProjects\\BecknSvc"
+    },
+    "BCSvc": {
+      "commandName": "Project",
+      "commandLineArgs": "projects",
+      "workingDirectory": "..\\..\\..\\BCProjects\\BCSvc"
+    },
+    "BC/LazyMagicSaaS Projects": {
+      "commandName": "Project",
+      "commandLineArgs": "projects",
+      "workingDirectory": "..\\..\\..\\BCProjects\\LazyMagicSaaS"
+    },
+    "BC/LazyMagicSaaS AwsSettings": {
+      "commandName": "Project",
+      "commandLineArgs": "settings LazyMagicSaaS Stacks/Dev/AwsSettings.json -p bc_tooling",
+      "workingDirectory": "..\\..\\..\\BCProjects\\LazyMagicSaaS"
+    },
+    "LazyMagicProjects/LazyMagicSaaS": {
+      "commandName": "Project",
+      "commandLineArgs": "projects",
+      "workingDirectory": "..\\..\\LazyMagicSaaS"
+    },
+    "BCProjects\\BCSvc": {
+      "commandName": "Project",
+      "commandLineArgs": "projects",
+      "workingDirectory": "..\\..\\..\\BCProjects\\BCSvc"
+    },
+    "Beckn/BecknSvc": {
+      "commandName": "Project",
+      "commandLineArgs": "projects",
+      "workingDirectory": "C:\\Users\\TimothyMay\\repos\\BecknProjects\\BecknSvc"
+    },
+    "LazyMagicProjects/LazyStactkTutorial/Petstore": {
+      "commandName": "Project",
+      "commandLineArgs": "projects",
+      "workingDirectory": "..\\..\\LazyMagicTutorial\\PetStore"
+    },
+    "PetStore/AwsSettings": {
+      "commandName": "Project",
+      "commandLineArgs": "settings PetStoreDev Stacks/Dev/AwsSettings.json -p tmay-dev",
+      "workingDirectory": "C:\\Users\\TimothyMay\\repos\\_Dev\\LazyMagicProjects\\PetStore"
+    }
+  }
+}
