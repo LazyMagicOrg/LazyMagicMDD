@@ -48,7 +48,7 @@ namespace LazyMagic
             await InfoAsync($"Generating {directive.Key} {projectName}");
 
             // Copy the template project to the target project. Removes *.g.* files.
-            var filesToExclude = new List<string> { "Authorization.csproj", "User.props", "SRCREADME.md", "GloblaUsing.g.cs" };
+            var filesToExclude = new List<string> { "Authorization.csproj", "User.props", "SRCREADME.md"};
             CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
 
             // Create/Update the csproj file.

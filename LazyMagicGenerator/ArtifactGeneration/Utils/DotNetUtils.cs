@@ -284,7 +284,7 @@ namespace LazyMagic
             var usingsCode = content;
             foreach (var usingName in usings)
                 usingsCode += $"global using {usingName};\r\n";
-            File.AppendAllText(filePath, usingsCode);
+            File.WriteAllText(filePath, usingsCode);
         }   
         public static void GenerateLicenseFile(string licenseText, string filePath)
         {

@@ -53,7 +53,7 @@ namespace LazyMagic
                 if(csprojfiles.Length != 1)
                     throw new Exception($"Error: Expected one csproj file in {sourceProjectDir} but found {csprojfiles.Length} csproj files.");
 
-                var filesToExclude = new List<string> { csprojfiles[0], "User.props", "SRCREADME.md", "GlobalUsing.g.cs", "ConfigureSvc.g.cs" };
+                var filesToExclude = new List<string> { csprojfiles[0], "User.props", "SRCREADME.md", "ConfigureSvc.g.cs" };
                 CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
 
                 // Create/Update the Repo.csproj file.

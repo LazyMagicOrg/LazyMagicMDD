@@ -40,7 +40,7 @@ namespace LazyMagic
                 // Copy the template project to the target project. Removes *.g.* files.
                 var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
-                var filesToExclude = new List<string> { "Lambda.csproj", "User.props", "SRCREADME.md", "GlobalUsing.g.cs", "ConfigureSvc.g.cs" };
+                var filesToExclude = new List<string> { "Lambda.csproj", "User.props", "SRCREADME.md", "ConfigureSvc.g.cs" };
                 CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
 
                 // Create/Update the Repo.csproj file.
