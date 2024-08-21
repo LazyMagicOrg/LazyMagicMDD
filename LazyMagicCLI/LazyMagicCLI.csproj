@@ -24,31 +24,15 @@
       commercial-grade application stack in AWS. It also generates a client application SDK making it simple to
       call that stack from C# applications.
     </Summary>
-    <Version>0.9.0</Version>
+    <Version>0.9.2</Version>
   </PropertyGroup>
 
-  <ItemGroup>
-    <None Remove="LICENSE.txt" />
-  </ItemGroup>
+	<ItemGroup>
+		<None Include="license.txt" Pack="true" PackagePath=""/>
+	</ItemGroup>	
 
-  <ItemGroup>
-    <Content Include="LICENSE.txt" />
-  </ItemGroup>	
-	
   <ItemGroup>
     <ProjectReference Include="..\LazyMagicGenerator\LazyMagicGenerator.csproj" />
   </ItemGroup>
 
-  <PropertyGroup>
-    <NugetSignCommand>$(MSBuildProjectDirectory)\..\..\LazyMagicCertificate\nuget sign -CertificateFingerprint $(SIGN_CERT_HASH) -Timestamper http://timestamp.digicert.com</NugetSignCommand>
-    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
-    <RepositoryUrl>https://LazyMagic.io</RepositoryUrl>
-    <RepositoryType>GitHub</RepositoryType>
-    <PackageTags>AWS OpenAPI .NET</PackageTags>
-    <PackageProjectUrl>https://LazyMagic.io</PackageProjectUrl>
-    <PackageReleaseNotes>Added UseManualPermissions Directive</PackageReleaseNotes>
-  </PropertyGroup>
- 
-	
-	
 </Project>

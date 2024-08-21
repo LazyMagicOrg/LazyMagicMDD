@@ -282,6 +282,7 @@ namespace LazyMagic
         public static void GenerateGlobalUsingFile(List<string> usings, string content, string filePath)
         {
             var usingsCode = content;
+            usings = usings.Distinct().ToList();    
             foreach (var usingName in usings)
                 usingsCode += $"global using {usingName};\r\n";
             File.WriteAllText(filePath, usingsCode);
