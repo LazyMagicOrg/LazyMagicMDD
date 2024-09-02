@@ -56,6 +56,7 @@ namespace LazyMagic
             var apiDirectiveBases = solution.Directives.GetDirectives(directive.Apis);
             foreach (var apiDirectiveBase in apiDirectiveBases)
             {
+                await InfoAsync($"Processing {apiDirectiveBase.Key}");
                 if (apiDirectives.ContainsKey(apiDirectiveBase.Key)) continue;
 
                 var containerDirectiveBases = solution.Directives.GetDirectives(((Api)apiDirectiveBase).Containers);
