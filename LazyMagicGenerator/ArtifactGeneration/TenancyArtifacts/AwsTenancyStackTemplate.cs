@@ -21,12 +21,15 @@ namespace LazyMagic
 
             // set the stack name 
             var templateName = $"sam.{directive.Key}.g.yaml";
+            var scriptName = $"Deploy{directive.Key}Stack.g.ps1";
+                
             await InfoAsync($"Generating {directive.Key} {templateName}");
             if (string.IsNullOrEmpty(Template)) Template = null;
 
             var templateBuilder = new StringBuilder();
             // Get the template and replace __tokens__
             templateBuilder.Append( File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, Template ?? "AWSTemplates/Snippets/sam.tenant.yaml")));
+            var tenantDeployScriptSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "DeployTenantStack.ps1"));
             var teantCloudFrontSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "sam.tenant.cloudfront.yaml"));
             var tenantCloudFrontWebAppSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "sam.tenant.cloudfront.webapp.yaml"));
             var tenantCloudFrontApiSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "sam.tenant.cloudfront.api.yaml"));
@@ -191,6 +194,62 @@ namespace LazyMagic
             /* SAVE COMPLETED TEMPLATE */
             var templatePath = Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Generated", templateName);
             File.WriteAllText(templatePath, templateBuilder.ToString());
+
+            /* INSERT __webappstackoutputs__ INTO SCRIPT */
+            var webAppStackReferences = "";
+            foreach (var webAppDirective in GetWebApps(solution, directive))
+            {
+                var appName = $"{webAppDirective.Key}";
+                webAppStackReferences += $@"
+$targetStack = $config.SystemName + ""-{appName.ToLower()}-webappbucket"" 
+${appName}StackOutputDict = Get-StackOutputs $targetStack
+Display-OutputDictionary -Dictionary ${appName}StackOutputDict -Title ""storeapp Stack Outputs""
+                    ";
+            }
+            tenantDeployScriptSnippet = tenantDeployScriptSnippet.Replace("__webappstackoutputs__", webAppStackReferences);
+
+            // INSERT __webapps__ INTO SCRIPT 
+            var webAppParameters = "";
+            foreach (var webAppDirective in GetWebApps(solution, directive))
+            {
+                var appName = $"{webAppDirective.Key}";
+                webAppParameters += $@"
+    ""{appName}BucketNameParameter"" = ${appName}StackOutputDict[""AppBucket""]
+";
+            }
+            tenantDeployScriptSnippet = tenantDeployScriptSnippet.Replace("__webapps__", webAppParameters);
+
+            // INSERT __apis__ INTO SCRIPT
+            var apiParameters = "";
+            foreach (var apiDirective in apiDirectives)
+            {
+                var apiName = apiDirective.Key;
+                apiParameters += $@"
+    ""{apiName}IdParameter"" = $ServiceStackOutputDict[""{apiName}Id""]
+";            }
+            tenantDeployScriptSnippet = tenantDeployScriptSnippet.Replace("__apis__", apiParameters);
+
+            // INSERT __auths__ INTO SCRIPT
+            var authParameters = "";
+            foreach (var apiDirective in apiDirectives)
+            {
+                if (string.IsNullOrEmpty(apiDirective.Authentication)) continue; // No authentication 
+                var apiArtifact = apiDirective.Artifacts.Values.FirstOrDefault(x => x is AwsHttpApiResource) as AwsHttpApiResource;
+                var authName = apiDirective.Authentication;
+                authParameters += $@"
+    ""{authName}UserPoolNameParameter"" = $ServiceStackOutputDict[""{authName}UserPoolName""]
+    ""{authName}UserPoolIdParameter"" = $ServiceStackOutputDict[""{authName}UserPoolId""]
+    ""{authName}UserPoolClientIdParameter"" = $ServiceStackOutputDict[""{authName}UserPoolClientId""]
+    ""{authName}IdentityPoolIdParameter"" = $ServiceStackOutputDict[""{authName}IdentityPoolId""]
+    ""{authName}SecurityLevelParameter"" = $ServiceStackOutputDict[""{authName}SecurityLevel""]
+";
+            }
+            tenantDeployScriptSnippet = tenantDeployScriptSnippet.Replace("__auths__", authParameters);
+
+            // WRITE COMPLETED SCRIPT
+            var scriptPath = Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Generated", scriptName );
+            File.WriteAllText(scriptPath, tenantDeployScriptSnippet);
+
 
             // Exports
             ExportedTemplatePath = templatePath;
