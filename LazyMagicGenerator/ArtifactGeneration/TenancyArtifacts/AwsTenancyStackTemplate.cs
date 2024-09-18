@@ -246,6 +246,9 @@ Display-OutputDictionary -Dictionary ${appName}StackOutputDict -Title ""storeapp
             }
             tenantDeployScriptSnippet = tenantDeployScriptSnippet.Replace("__auths__", authParameters);
 
+            // REPLACE TEMPLATE NAME
+            tenantDeployScriptSnippet = tenantDeployScriptSnippet.Replace("__templatename__", templateName);
+
             // WRITE COMPLETED SCRIPT
             var scriptPath = Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Generated", scriptName );
             File.WriteAllText(scriptPath, tenantDeployScriptSnippet);
