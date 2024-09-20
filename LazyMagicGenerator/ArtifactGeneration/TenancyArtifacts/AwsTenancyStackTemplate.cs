@@ -21,7 +21,7 @@ namespace LazyMagic
 
             // set the stack name 
             var templateName = $"sam.{directive.Key}.g.yaml";
-            var scriptName = $"Deploy{directive.Key}Stack.g.ps1";
+            var scriptName = $"Deploy-Tenant-{directive.Key}-Stack.g.ps1";
                 
             await InfoAsync($"Generating {directive.Key} {templateName}");
             if (string.IsNullOrEmpty(Template)) Template = null;
@@ -29,7 +29,7 @@ namespace LazyMagic
             var templateBuilder = new StringBuilder();
             // Get the template and replace __tokens__
             templateBuilder.Append( File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, Template ?? "AWSTemplates/Snippets/sam.tenant.yaml")));
-            var tenantDeployScriptSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "DeployTenantStack.ps1"));
+            var tenantDeployScriptSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "Deploy-Tenant-Stack.ps1"));
             var teantCloudFrontSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "sam.tenant.cloudfront.yaml"));
             var tenantCloudFrontWebAppSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "sam.tenant.cloudfront.webapp.yaml"));
             var tenantCloudFrontApiSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "sam.tenant.cloudfront.api.yaml"));
@@ -201,7 +201,7 @@ namespace LazyMagic
             {
                 var appName = $"{webAppDirective.Key}";
                 webAppStackReferences += $@"
-$targetStack = $config.SystemName + ""-{appName.ToLower()}-webappbucket"" 
+$targetStack = $config.SystemName + ""-webapp-{appName.ToLower()}"" 
 ${appName}StackOutputDict = Get-StackOutputs $targetStack
 Display-OutputDictionary -Dictionary ${appName}StackOutputDict -Title ""storeapp Stack Outputs""
                     ";
