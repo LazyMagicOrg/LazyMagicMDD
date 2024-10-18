@@ -16,7 +16,7 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Create Packages folder
-      run: pwsh New-Item -ItemType Directory -Path ./Packages
+      run: pwsh -Command New-Item -ItemType Directory -Path ./Packages
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
