@@ -21,25 +21,30 @@ jobs:
         dotnet-version: '8.x' # Update to your .NET version
 
     # We need to exclude the LazyMagicVsExt project from 
-    # the build process. We do this in two steps.
-    # 1. Create a Directory.Build.props file that will be used to skip the LazyMagicVsExt project
-    # 2. Build the solution and exclude the LazyMagicVsExt project
     - name: Create Directory.Build.props file
       run: |
-        cat > Directory.Build.props << EOF 
+        cat > Directory.Build.props << EOF
         <Project>
-            <PropertyGroup>
-                <SkipProject Condition="'$(SkipProject)' == ''">false</SkipProject>
-                <BuildProjectReferences Condition="'$(SkipProject)' == 'true'">false</BuildProjectReferences>
-            </PropertyGroup>
+          <PropertyGroup>
+            <!-- List of projects to exclude from build -->
+            <ProjectsToExclude>
+              LazyMagicVsExt
+            </ProjectsToExclude>
+          </PropertyGroup>
+
+          <Target Name="ExcludeProjectsFromBuild" BeforeTargets="Build">
+            <ItemGroup>
+              <ProjectReference Remove="@(ProjectReference)"
+                                Condition="'$(ProjectsToExclude.Contains(%(Filename)))' == 'true'" />
+            </ItemGroup>
+          </Target>
         </Project>
-        EOF
 
         cat Directory.Build.props
 
     - name: Build # Build solution
       run: |
-        dotnet build LazyMagicMDD.sln /p:SkipProject=LazyMagicVsExt --configuration Release
+        dotnet build LazyMagicMDD.sln --configuration Release
 
     - name: Publish
       run: |
