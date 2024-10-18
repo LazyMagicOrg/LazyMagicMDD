@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
@@ -25,7 +25,8 @@ jobs:
 
     - name: Build # Build solution
       run: |
-        dotnet build --configuration Release --no-restore
+        dotnet build LazyMagicGenerator  --configuration Release --no-restore
+        dotnet build LazyMagicCLI  --configuration Release --no-restore
 
     - name: Publish
       run: |
