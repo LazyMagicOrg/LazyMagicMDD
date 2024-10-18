@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
@@ -20,20 +20,21 @@ jobs:
       with:
         dotnet-version: '8.x' # Update to your .NET version
 
-    - name: Restore dependencies
-      run: dotnet restore
-
     - name: Build # Build solution
-      run: dotnet build --no-restore --configuration Release
+      run: |
+        dotnet build LazyMagicGenerator --configuration Release
+        dotnet build LazyMagicCLI --configuration Release
 
     - name: Publish
       run: |
         dotnet nuget push ./Packages/*.nupkg --source https://nuget.pkg.github.com/LazyMagicOrg/index.json --api-key ${{ secrets.GITHUB_TOKEN }}
         dotnet nuget push ./Packages/*.snupkg --source https://nuget.pkg.github.com/LazyMagicOrg/index.json --api-key ${{ secrets.GITHUB_TOKEN }}
 
+    # Note that we are publishing the vsix that was checked into the repo. Building the LazyMagicVsExt project on GitHub is failing at this point 
+    # and further research is required to figure it out. Yes, we tried the windows-latest runner etc. 
     - name: Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
           LICENSE.txt
-          LazMagicVsExt/bin/Release/LazMagicVsExt.vsix
+          LazyMagicVsExt.vsix
