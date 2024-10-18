@@ -1,38 +1,40 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <Authors>Timothy May, Thomas May</Authors>
-    <Company>Insight Sciences Corporation</Company>
-    <Copyright>Copyright (c) 2021,2022,2023 Insight Sciences Corporation</Copyright>
-    
-    <PackageLicenseFile>license.txt</PackageLicenseFile>
-    <RequireLicenseAcceptance>true</RequireLicenseAcceptance>
-    <PackAsTool>true</PackAsTool>
-    <ToolCommandName>LazyMagic</ToolCommandName>
-    <PackageOutputPath>./nupkg</PackageOutputPath>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <Title>LazyMagic .NET CLI Tool</Title>
-    <Description>LazyMagic is a tool that ingests an OpenApi (swagger) REST API specification and generates the AWS Serverless 
-    Application Model (SAM) template and the C# AWS Lambda projects necessary to stand up a fully featured 
-    commercial-grade application stack in AWS. It also generates a client application SDK making it simple to 
-    call that stack from C# applications.</Description>
-    <Summary>
-      LazyMagic is a tool that ingests an OpenApi (swagger) REST API specification and generates the AWS Serverless
-      Application Model (SAM) template and the C# AWS Lambda projects necessary to stand up a fully featured
-      commercial-grade application stack in AWS. It also generates a client application SDK making it simple to
-      call that stack from C# applications.
-    </Summary>
-    <Version>0.9.7</Version>
-  </PropertyGroup>
+	<Import Project="$(SolutionDir)CommonPackageHandling.targets" />
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net8.0</TargetFramework>
+		<Authors>Timothy May, Thomas May</Authors>
+		<Company>Insight Sciences Corporation</Company>
+		<Copyright>Copyright (c) 2021,2022,2023 Insight Sciences Corporation</Copyright>
+		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+		<RequireLicenseAcceptance>true</RequireLicenseAcceptance>
+		<PackAsTool>true</PackAsTool>
+		<ToolCommandName>LazyMagic</ToolCommandName>
+		<!--<PackageOutputPath>./nupkg</PackageOutputPath>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		-->
+		<Title>LazyMagic .NET CLI Tool</Title>
+		<Description>
+			LazyMagic is a tool that ingests an OpenApi (swagger) REST API specification and generates the AWS Serverless
+			Application Model (SAM) template and the C# AWS Lambda projects necessary to stand up a fully featured
+			commercial-grade application stack in AWS. It also generates a client application SDK making it simple to
+			call that stack from C# applications.
+		</Description>
+		<Summary>
+			LazyMagic is a tool that ingests an OpenApi (swagger) REST API specification and generates the AWS Serverless
+			Application Model (SAM) template and the C# AWS Lambda projects necessary to stand up a fully featured
+			commercial-grade application stack in AWS. It also generates a client application SDK making it simple to
+			call that stack from C# applications.
+		</Summary>
+	</PropertyGroup>
 
 	<ItemGroup>
-		<None Include="license.txt" Pack="true" PackagePath=""/>
-	</ItemGroup>	
+		<None Include="LICENSE.txt" Pack="true" PackagePath=""/>
+	</ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\LazyMagicGenerator\LazyMagicGenerator.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\LazyMagicGenerator\LazyMagicGenerator.csproj" />
+	</ItemGroup>
 
 </Project>
