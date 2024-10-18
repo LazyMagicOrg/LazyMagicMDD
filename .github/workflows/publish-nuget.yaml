@@ -15,6 +15,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: Create Packages folder
+      run: dotnet new dir --name Packages
+
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
