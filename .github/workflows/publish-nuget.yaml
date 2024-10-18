@@ -36,7 +36,7 @@ jobs:
 
     - name: Build # Build solution
       run: |
-        dotnet build LazyMagicMDD.sln --configuration Release
+        dotnet build LazyMagicMDD.sln --configuration Release  /p:BuildProjectReferences=true /p:LazyMagicVsExtEnabled=false
 
     - name: Publish
       run: |
