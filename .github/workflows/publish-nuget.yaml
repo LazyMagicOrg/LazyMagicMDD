@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v2
@@ -20,23 +20,12 @@ jobs:
       with:
         dotnet-version: '8.x' # Update to your .NET version
 
-    # We need to exclude the LazyMagicVsExt project from 
-    - name: Create Directory.Build.props file
-      run: |
-        cat > Directory.Build.props << EOF
-        <Project>
-          <Target Name="ExcludeProjectsFromBuild" BeforeTargets="Build">
-            <ItemGroup>
-              <ProjectReference Remove="@(ProjectReference)" Condition="'%(Filename)' == 'LazyMagicVsExt'" />
-            </ItemGroup>
-          </Target>
-        </Project>
-        EOF
-        cat Directory.Build.props
+    - name: Restore dependencies
+      run: dotnet restore    
 
     - name: Build # Build solution
       run: |
-        dotnet build LazyMagicMDD.sln --configuration Release  /p:BuildProjectReferences=true /p:LazyMagicVsExtEnabled=false
+        dotnet build --configuration Release --no-restore
 
     - name: Publish
       run: |
