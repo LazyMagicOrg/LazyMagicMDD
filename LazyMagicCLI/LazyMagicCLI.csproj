@@ -1,19 +1,22 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-	<Import Project="../CommonPackageHandling.targets" />
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<TargetFramework>net8.0</TargetFramework>
 		<Authors>Timothy May, Thomas May</Authors>
 		<Company>Insight Sciences Corporation</Company>
-		<Copyright>Copyright (c) 2021,2022,2023 Insight Sciences Corporation</Copyright>
-		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+		<Copyright>Copyright (c) 2021 - 2024 Insight Sciences Corporation. All rights reserved.</Copyright>
+		<Version>0.9.7</Version>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
 		<RequireLicenseAcceptance>true</RequireLicenseAcceptance>
+		<SignAssembly>false</SignAssembly>
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<PackageOutputPath>../Packages</PackageOutputPath>
+
 		<PackAsTool>true</PackAsTool>
 		<ToolCommandName>LazyMagic</ToolCommandName>
-		<!--<PackageOutputPath>./nupkg</PackageOutputPath>
-		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-		-->
+		
 		<Title>LazyMagic .NET CLI Tool</Title>
 		<Description>
 			LazyMagic is a tool that ingests an OpenApi (swagger) REST API specification and generates the AWS Serverless
@@ -37,4 +40,37 @@
 		<ProjectReference Include="..\LazyMagicGenerator\LazyMagicGenerator.csproj" />
 	</ItemGroup>
 
+	<Target Name="Create Package Folder" BeforeTargets="Build">
+		<MakeDir Directories="..\Packages" />
+	</Target>
+	
+	<Target Name="DeletePackage" AfterTargets="Build">
+		<MSBuild Projects="$(MSBuildProjectFile)" Targets="DeleteSpecificPackage" Properties="Configuration=$(Configuration)" />
+	</Target>
+
+
+	<Target Name="DeleteSpecificPackage">
+		<PropertyGroup>
+			<PackageCacheFolder Condition=" '$(OS)' == 'Windows_NT' ">$(UserProfile)\.nuget\packages\$(AssemblyName)\$(Version)</PackageCacheFolder>
+			<PackageCacheFolder Condition=" '$(OS)' != 'Windows_NT' ">$(Home)/.nuget/packages/$(AssemblyName)/$(Version)</PackageCacheFolder>
+		</PropertyGroup>
+
+		<Message Importance="high" Text="Attempting to delete package $(AssemblyName) version $(Version) from cache folder $(PackageCacheFolder)" />
+		<!-- Windows-specific delete command -->
+		<Exec Condition=" '$(OS)' == 'Windows_NT' AND Exists('$(PackageCacheFolder)')"
+			  Command="cmd.exe /c &quot;if exist &quot;$(PackageCacheFolder)&quot; rmdir /s /q &quot;$(PackageCacheFolder)&quot;&quot;"
+			  ContinueOnError="true">
+			<Output TaskParameter="ExitCode" PropertyName="ErrorCode"/>
+		</Exec>
+
+		<!-- Unix/Linux/Mac-specific delete command -->
+		<Exec Condition=" '$(OS)' != 'Windows_NT' AND Exists('$(PackageCacheFolder)')"
+			  Command="rm -rf &quot;$(PackageCacheFolder)&quot;"
+			  ContinueOnError="true">
+			<Output TaskParameter="ExitCode" PropertyName="ErrorCode"/>
+		</Exec>
+		<Message Condition="'$(ErrorCode)' != '0'" Importance="high" Text="Failed to delete package. Error code: $(ErrorCode)" />
+		<Message Condition="'$(ErrorCode)' == '0'" Importance="high" Text="Successfully deleted package from $(PackageCacheFolder)" />
+	</Target>	
+	
 </Project>

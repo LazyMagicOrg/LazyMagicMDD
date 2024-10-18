@@ -15,9 +15,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Create Packages folder
-      run: pwsh -Command New-Item -ItemType Directory -Path Packages
-
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
