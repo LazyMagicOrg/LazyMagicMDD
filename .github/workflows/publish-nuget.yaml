@@ -33,6 +33,22 @@ jobs:
         dotnet nuget push ./Packages/*.nupkg --source https://nuget.pkg.github.com/LazyMagicOrg/index.json --api-key ${{ secrets.GITHUB_TOKEN }}
         dotnet nuget push ./Packages/*.snupkg --source https://nuget.pkg.github.com/LazyMagicOrg/index.json --api-key ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Extract version from XML
+      id: get_version
+      run: |
+        VERSION=$(grep -oP '(?<=<Version>).*(?=</Version>)' Version.props)
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Create and push tag
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        git config user.name github-actions[bot]
+        git config user.email github-actions[bot]@users.noreply.github.com
+        git tag -a v${{ steps.get_version.outputs.VERSION }} -m "Release v${{ steps.get_version.outputs.VERSION }}"
+        git push origin v${{ steps.get_version.outputs.VERSION }}
+
+
     # Note that we are publishing the vsix that was checked into the repo. Building the LazyMagicVsExt project on GitHub is failing at this point 
     # and further research is required to figure it out. Yes, we tried the windows-latest runner etc. 
 

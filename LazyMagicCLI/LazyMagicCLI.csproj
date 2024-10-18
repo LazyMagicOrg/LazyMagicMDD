@@ -1,11 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\Version.props"/>
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<TargetFramework>net8.0</TargetFramework>
 		<Authors>Timothy May, Thomas May</Authors>
 		<Company>Insight Sciences Corporation</Company>
 		<Copyright>Copyright (c) 2021 - 2024 Insight Sciences Corporation. All rights reserved.</Copyright>
-		<Version>0.9.7</Version>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
 		<RequireLicenseAcceptance>true</RequireLicenseAcceptance>
 		<SignAssembly>false</SignAssembly>

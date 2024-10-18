@@ -86,6 +86,7 @@
     <None Include="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
     </None>
+    <None Include="UpdateVersion.ps1" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
@@ -154,6 +155,9 @@
   <Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets" Condition="'$(VSToolsPath)' != ''" />
   <PropertyGroup>
     <PostBuildEvent>powershell -Command "Copy-Item '$(TargetDir)LazyMagicVsExt.vsix' '$(SolutionDir)' -Force"</PostBuildEvent>
+  </PropertyGroup>
+  <PropertyGroup>
+    <PreBuildEvent>powershell.exe  -ExecutionPolicy Bypass -NoProfile -File "$(ProjectDir)UpdateVersion.ps1" $(ProjectDir)</PreBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
