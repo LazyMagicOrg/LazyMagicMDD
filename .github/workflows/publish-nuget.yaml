@@ -22,8 +22,7 @@ jobs:
 
     - name: Build # Build solution
       run: |
-        dotnet build LazyMagicGenerator --configuration Release
-        dotnet build LazyMagicCLI --configuration Release
+        dotnet build LazyMagicMDD.sln /p:SkipProject=LazyMagicVsExt --configuration Release
 
     - name: Publish
       run: |
