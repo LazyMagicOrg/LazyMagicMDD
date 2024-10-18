@@ -68,7 +68,7 @@ namespace LazyMagicApp
             var logger = new Logger();
             try
             {
-                projectsOptions.SolutionFilePath = Directory.GetCurrentDirectory();
+                projectsOptions.SolutionFilePath ??= Directory.GetCurrentDirectory();
                 
                 var lzSolution = new LzSolution(logger, projectsOptions.SolutionFilePath);
 

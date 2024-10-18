@@ -12,6 +12,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.gitignore = .gitignore
 		CommonPackageHandling.targets = CommonPackageHandling.targets
 		Directory.Packages.props = Directory.Packages.props
+		LazyMagicVsExt.vsix = LazyMagicVsExt.vsix
 		LazyMagicVsExt\LICENSE.txt = LazyMagicVsExt\LICENSE.txt
 		.github\workflows\publish-nuget.yaml = .github\workflows\publish-nuget.yaml
 		README.md = README.md
