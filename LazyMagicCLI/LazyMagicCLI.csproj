@@ -15,7 +15,7 @@
 		<PackageOutputPath>../Packages</PackageOutputPath>
 
 		<PackAsTool>true</PackAsTool>
-		<ToolCommandName>LazyMagic</ToolCommandName>
+		<ToolCommandName>LazyMagicCLI</ToolCommandName>
 		
 		<Title>LazyMagic .NET CLI Tool</Title>
 		<Description>
