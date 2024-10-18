@@ -35,11 +35,11 @@ jobs:
           <Target Name="ExcludeProjectsFromBuild" BeforeTargets="Build">
             <ItemGroup>
               <ProjectReference Remove="@(ProjectReference)"
-                                Condition="'$(ProjectsToExclude.Contains(%(Filename)))' == 'true'" />
+                                Condition="'\$(ProjectsToExclude.Contains(%(Filename)))' == 'true'" />
             </ItemGroup>
           </Target>
         </Project>
-
+        EOF
         cat Directory.Build.props
 
     - name: Build # Build solution
