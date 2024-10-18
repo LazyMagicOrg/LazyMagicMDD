@@ -25,17 +25,9 @@ jobs:
       run: |
         cat > Directory.Build.props << EOF
         <Project>
-          <PropertyGroup>
-            <!-- List of projects to exclude from build -->
-            <ProjectsToExclude>
-              LazyMagicVsExt
-            </ProjectsToExclude>
-          </PropertyGroup>
-
           <Target Name="ExcludeProjectsFromBuild" BeforeTargets="Build">
             <ItemGroup>
-              <ProjectReference Remove="@(ProjectReference)"
-                                Condition="'\$(ProjectsToExclude.Contains(%(Filename)))' == 'true'" />
+              <ProjectReference Remove="@(ProjectReference)" Condition="'%(Filename)' == 'LazyMagicVsExt'" />
             </ItemGroup>
           </Target>
         </Project>
