@@ -12,7 +12,7 @@ namespace LazyMagic
         #region Properties 
         public List<string> Modules { get; set; } = new List<string>();
         public string Runtime { get; set; }
-        public string ApiPrefix { get; set; }  
+        public string ApiPrefix { get; set; }
         #endregion
 
         public override void AssignDefaults(Directives directives) => AssignDefaults(directives, this.GetType());    

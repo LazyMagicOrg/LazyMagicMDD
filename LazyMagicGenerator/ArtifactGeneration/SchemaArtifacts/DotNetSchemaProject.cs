@@ -18,6 +18,7 @@ namespace LazyMagic
     {
         #region Properties
         public override string ProjectFilePath => ExportedProjectPath;
+        public override string NameSuffix { get; set; } = "Repo";
         public List<string> ExportedEntities { get; set; } = new List<string>();
         #endregion
 
@@ -58,14 +59,14 @@ namespace LazyMagic
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {
+            var projectName = directiveArg.Key + NameSuffix ?? "";
             try
             {
                 Schema directive = (Schema)directiveArg;
 
                 // Set the project name and namespace
-                var projectName = ProjectName ?? directive.Key;
-                projectName += NameSuffix ?? "";
-                var nameSpace = Namespace ?? projectName;
+                
+                var nameSpace = projectName;
                 await InfoAsync($"Generating {directive.Key} {projectName}");
 
                 // Read OpenApi specifications
@@ -75,7 +76,7 @@ namespace LazyMagic
                 var openApiDocument = solution.AggregateSchemas;
 
                 // Get Dependencies 
-                var dependantArtifacts = solution.Directives.GetArtifactsByType(directive.Schemas, "DotNetSchema");
+                var dependantArtifacts = solution.Directives.GetArtifactsByTypeName(directive.Schemas, "DotNetSchema");
                 foreach(var dotNetSchemaArtifact in dependantArtifacts)
                 {
                     var dotNetSchemaProject = dotNetSchemaArtifact as DotNetSchemaProject;
@@ -86,12 +87,13 @@ namespace LazyMagic
                 // Copy the template project to the target project. Removes *.g.* files.           
                 var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
-                var filesToExclude = new List<string> { "Schema.csproj", "User.props", "SRCREADME.md"};
+                var csprojFileName = GetCsprojFile(sourceProjectDir);
+                var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md"};
                 CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
 
                 // Create/Update the Schema.csproj file.
                 File.Copy(
-                    Path.Combine(sourceProjectDir, "Schema.csproj"),
+                    Path.Combine(sourceProjectDir, csprojFileName),
                     Path.Combine(targetProjectDir, projectName + ".csproj"),
                     overwrite: true);
 
@@ -166,7 +168,7 @@ namespace LazyMagic
             } 
             catch (Exception ex)
             {
-                throw new Exception("Error generating DotNetSchemaProject", ex);
+                throw new Exception($"Error generating {GetType().Name} for {projectName} : {ex.Message}");
             }
         }
         public static bool HasPublicIdProperty(ClassDeclarationSyntax classDeclaration)

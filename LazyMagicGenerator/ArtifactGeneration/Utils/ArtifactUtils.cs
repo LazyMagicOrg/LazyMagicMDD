@@ -7,100 +7,53 @@ namespace LazyMagic
 {
     public static class ArtifactUtils
     {
-        public static List<string> GetModulesForApi(Api api, Directives directives)
+        public static T GetDirective<T>(Directives directives, string key) where T : class
         {
-            List<string> modules = new List<string>();
-            foreach (var container in api.Containers)
-            {
-                var containerDirective = directives[container] as Container;
-                if (containerDirective == null)
-                    throw new Exception($"Container {container} not found in directives.");
-                modules.AddRange(containerDirective.Modules);
-            }
-            return modules;
+            return (directives.TryGetValue(key, out var directive)
+                ? directive as T
+                    ?? throw new Exception($"Directive '{key}' found but directive is not of type {typeof(T).Name}")
+                : throw new Exception($"Directive '{key}' not found in directives"));
         }
 
+        public static List<string> GetModulesForApi(Api api, Directives directives)
+        {
+            return api.Containers
+                .Select(container => directives.TryGetValue(container, out var directive)
+                    ? directive as Container
+                    ?? throw new InvalidCastException($"Directive for container {container} is not of type Container.")
+                    : throw new KeyNotFoundException($"Container {container} not found in directives."))
+                .SelectMany(container => container.Modules)
+                .ToList();
+        }
         public static List<string> GetSchemasForApi(Api api, Directives directives)
         {
-            List<string> schemas = new List<string>();
-            foreach (var container in api.Containers)
-            {
-                var containerDirective = directives[container] as Container;
-                if (containerDirective == null)
-                    throw new Exception($"Container {container} not found in directives.");
-                foreach (var module in containerDirective.Modules)
-                {
-                    var moduleDirective = directives[module] as Module;
-                    if (moduleDirective == null)
-                        throw new Exception($"Module {module} not found in directives.");
-                    schemas.AddRange(moduleDirective.Schemas);
-                }
-            }
-            return schemas.Distinct().ToList();
+            return api.Containers
+                .Select(container => directives.TryGetValue(container, out var directive)
+                    ? directive as Container
+                    : throw new KeyNotFoundException($"Container {container} not found in directives."))
+                .Where(containerDirective => containerDirective != null)
+                .SelectMany(containerDirective => containerDirective.Modules
+                    .Select(module => directives.TryGetValue(module, out var moduleDirective)
+                        ? moduleDirective as Module
+                        : throw new KeyNotFoundException($"Module {module} not found in directives.")))
+                .Where(moduleDirective => moduleDirective != null)
+                .SelectMany(moduleDirective => moduleDirective.Schemas)
+                .Distinct()
+                .ToList();
         }
         public static List<string> GetDependentApiSpecs(List<string> containers, Directives directives)
         {
-            List<string> dependentApiSpecs = new List<string>();
-            foreach (var container in containers)
-            {
-                var containerDirective = directives[container] as Container;
-                if (containerDirective == null)
-                    throw new Exception($"Container {container} not found in directives.");
-                foreach (var module in containerDirective.Modules)
-                {
-                    var moduleDirective = directives[module] as Module;
-                    if (moduleDirective == null)
-                        throw new Exception($"Module {module} not found in directives.");
-                    dependentApiSpecs.AddRange(moduleDirective.OpenApiSpecs);
-                    foreach (var schema in moduleDirective.Schemas)
-                    {
-                        var schemaDirective = directives[schema] as Schema;
-                        if (schemaDirective == null)
-                            throw new Exception($"Schema {schema} not found in directives.");
-                        dependentApiSpecs.AddRange(schemaDirective.OpenApiSpecs);
-                    }
-                }
-            }
-            return dependentApiSpecs.Distinct().ToList();
-        }
-
-        public static List<string> GetApisForContainer(SolutionBase solution, string containerKey)
-        {
-            var apis = new List<string>();
-            foreach (var directive in solution.Directives.Values)
-            {
-                if (directive is Api)
-                {
-                    var api = directive as Api;
-                    if (api.Containers.Contains(containerKey))
-                        apis.Add(api.Key);
-                }
-            }
-            return apis.Distinct().ToList();
-        }
-
-        public static List<string> GetContainers(SolutionBase solution, Service directive)
-        {
-            var lambdas = new List<string>();
-            foreach (var apiKey in directive.Apis)
-                if (solution.Directives.TryGetValue(apiKey, out DirectiveBase apiDirective))
-                {
-                    if (!(apiDirective is Api))
-                        throw new Exception($"Error generating AwsService: {directive.Key}, {apiKey} is not an Api.");
-
-                    foreach (var containerKey in ((Api)apiDirective).Containers)
-                    {
-                        if (solution.Directives.TryGetValue(containerKey, out DirectiveBase container))
-                        {
-                            if (!(container is Container))
-                                throw new Exception($"Error generating AwsService: {directive.Key}, {containerKey} is not a Container.");
-                            lambdas.Add(containerKey);
-                        }
-                    }
-                }
-                else
-                    throw new Exception($"Error generating AwsService: {directive.Key}, Api {apiKey} not found.");
-            return lambdas.Distinct().ToList();
+            return containers
+                .Select(container => GetDirective<Container>(directives, container))
+                .SelectMany(container => container.Modules)
+                .Select(module => GetDirective<Module>(directives, module))
+                .SelectMany(module => module.OpenApiSpecs.Concat(
+                    module.Schemas
+                        .Select(schema => GetDirective<Schema>(directives, schema))
+                        .SelectMany(schema => schema.OpenApiSpecs)
+                ))
+                .Distinct()
+                .ToList();
         }
     }
 }

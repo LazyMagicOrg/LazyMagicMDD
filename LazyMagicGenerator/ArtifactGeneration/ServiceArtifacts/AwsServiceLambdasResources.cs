@@ -11,13 +11,16 @@ namespace LazyMagic
     {
 
         /// <summary>
-        /// Return the Lambda and Lambda Permissions resources for the service.
-        /// We grab the exported resource from the AwsLambdaResouce artifact and
-        /// add in the permissions for each api calling the lambda.
+        /// Generate the #LzLambdas# content by aggregating all the 
+        /// previously generated AWS::Lambda::Function resources. 
+        /// Generate the AWS::Lambda::Permission resources for each 
+        /// lambda as well.
+        /// The resource definition for the lambdas and permissions 
+        /// are returned as a string in yaml format.
         /// </summary>
         /// <param name="solution"></param>
         /// <param name="directiveArg"></param>
-        /// <returns></returns>
+        /// <returns>SAM resource definitions</returns>
         /// <exception cref="Exception"></exception>
         public static string GenerateLambdaResources(SolutionBase solution, DirectiveBase directiveArg)
         {
@@ -25,7 +28,7 @@ namespace LazyMagic
             {
                 Service directive = (Service)directiveArg;
 
-                var lambdaPermissionSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "sam.service.lambda.permission.yaml"));
+                var lambdaPermissionSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.service.lambda.permission.yaml"));
                 //var sourceArnSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "sam.sourcearn.yaml"));
 
                 var apiGateways = new List<string>();
@@ -38,47 +41,50 @@ namespace LazyMagic
                 {
                     var lambdaTemplate = lambdaArtifact.ExportedAwsResourceDefinition;
                     resourceBuilder.Append(lambdaTemplate);
+                    resourceBuilder.AppendLine();
 
-                    /* LAMBDA PERMISSIONS */
+                    /* LAMBDA PERMISSIONS for access by API */
 
                     // Add SourceArns for each api calling the lambda
                     var permissions = "";
-                    var apiArtifacts = GetApisForContainer(solution, lambdaArtifact.ExportedContainerKey);    
+                    var apiArtifacts = GetApisForContainer(solution, lambdaArtifact);    
                     foreach (var apiArtifact in apiArtifacts)
                     {
                         permissions += lambdaPermissionSnippet
-                            .Replace("__ApiName__", apiArtifact.ExportedName)
-                            .Replace("__LambdaName__", lambdaArtifact.ExportedName);   
+                            .Replace("__ApiName__", apiArtifact.ExportedAwsResourceName)
+                            .Replace("__LambdaName__", lambdaArtifact.ExportedAwsResourceName);   
                     }
                     resourceBuilder.Append(permissions);
+                    resourceBuilder.AppendLine();
                 }
-                var result = resourceBuilder.ToString();
-                return result;
+                var templateResource = resourceBuilder.ToString();
+                return templateResource;
             }
 
             catch (Exception ex)
             {
-                throw new Exception($"Error generating AwsServerLambda:  {ex.Message}");
+                throw new Exception($"Error generating {nameof(AwsServiceLambdasResources)} : {ex.Message}");
             }
         }
 
-        private static List<AwsHttpApiResource> GetApisForContainer(SolutionBase solution, string containerKey)
+        private static List<IAwsApiResource> GetApisForContainer(SolutionBase solution, AwsApiLambdaResource currentArtifact)
         {
-            var apis = new List<AwsHttpApiResource>();
-            foreach (var directive in solution.Directives.Values.Where(x => x is Api).Cast<Api>().ToList())
-                foreach(var artifact  in directive.Artifacts.Values.Where(x => x is AwsHttpApiResource).Cast<AwsHttpApiResource>().ToList())
-                    apis.Add(artifact);
-            return apis.Distinct().ToList();
+            var containerDirective = solution.Directives.GetArtifactDirective(currentArtifact);
+            return solution.Directives.Values
+                .OfType<Api>()
+                .Where(api => api.Containers.Contains(containerDirective.Key))
+                .SelectMany(api => api.Artifacts.Values)
+                .OfType<IAwsApiResource>()
+                .ToList();
         }
 
-        private static List<AwsLambdaResource> GetLambdaResources(SolutionBase solution, Service directive)
+        private static List<AwsApiLambdaResource> GetLambdaResources(SolutionBase solution, Service directive)
         {
-            var lambdas = new List<AwsLambdaResource>();
-            var containerKeys = GetContainers(solution, directive);
-            var lambdaArtifacts = solution.Directives.GetArtifactsByType(containerKeys, "AwsLambdaResource");
+            var lambdas = new List<AwsApiLambdaResource>();
+            var lambdaArtifacts = solution.Directives.GetArtifactsByType<AwsApiLambdaResource>();
             foreach (var artifact in lambdaArtifacts)
             {
-                var lambdaArtifact = artifact as AwsLambdaResource;
+                var lambdaArtifact = artifact as AwsApiLambdaResource;
                 if (lambdaArtifact == null)
                     throw new Exception($"Error generating AwsService: {directive.Key}, {artifact.Key} artifact isn't a AwsLambdaResource");
                 lambdas.Add(lambdaArtifact);

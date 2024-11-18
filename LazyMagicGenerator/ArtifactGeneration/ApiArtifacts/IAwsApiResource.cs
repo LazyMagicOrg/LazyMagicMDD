@@ -6,8 +6,8 @@ namespace LazyMagic
 {
     public interface IAwsApiResource
     {
-        string ExportedResourceName { get; set; }
-        string ExportedResource { get; set; }
+        string ExportedAwsResourceName { get; set; }
+        string ExportedAwsResourceDefinition { get; set; }
         string ExportedPath { get; set; }
         string ExportedPrefix { get; set; }
     }

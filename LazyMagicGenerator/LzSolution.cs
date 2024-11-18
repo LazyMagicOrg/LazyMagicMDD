@@ -53,7 +53,7 @@ namespace LazyMagic
                     string yamlContent = reader.ReadToEnd();
                     var deserializer = new DeserializerBuilder()
                            .WithTypeConverter(new DirectivesPropertyConverter())
-                           .WithTypeConverter(new DirectivePropertyConverter())   
+                           .WithTypeConverter(new DirectivePropertyConverter())
                            .WithTypeConverter(new ArtifactsPropertyConverter())
                            .WithTypeConverter(new ArtifactPropertyConverter())
                            .WithNodeDeserializer(inner => new DetailedErrorNodeDeserializer(inner), s => s.InsteadOf<ObjectNodeDeserializer>())

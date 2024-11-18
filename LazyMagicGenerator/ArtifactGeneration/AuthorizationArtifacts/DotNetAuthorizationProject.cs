@@ -38,51 +38,56 @@ namespace LazyMagic
             Authorization directive = (Authorization)directiveArg;
 
             // Set the project name and path
-            var projectName = ProjectName ?? directive.Key;
-            projectName += NameSuffix ?? "";
-            var nameSpace = Namespace ?? projectName;
+            var projectName = directive.Key + NameSuffix ?? "";
+            var nameSpace = projectName;
             ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName) + ".csproj";
             ExportedGlobalUsings = new List<string> { nameSpace };
             var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
             var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
+            var csprojFileName = GetCsprojFile(sourceProjectDir);
             await InfoAsync($"Generating {directive.Key} {projectName}");
+            try
+            {
+                // Copy the template project to the target project. Removes *.g.* files.
+                var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md" };
+                CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
 
-            // Copy the template project to the target project. Removes *.g.* files.
-            var filesToExclude = new List<string> { "Authorization.csproj", "User.props", "SRCREADME.md"};
-            CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
+                // Create/Update the csproj file.
+                File.Copy(
+                    Path.Combine(sourceProjectDir, csprojFileName),
+                    Path.Combine(targetProjectDir, projectName + ".csproj"),
+                    overwrite: true);
 
-            // Create/Update the csproj file.
-            File.Copy(
-                Path.Combine(sourceProjectDir, "Authorization.csproj"),
-                Path.Combine(targetProjectDir, projectName + ".csproj"),
-                overwrite: true);
+                // Projects.g.props - contains generated project reference dependencies
+                var projectPropsPath = Path.Combine(targetProjectDir, "Projects.g.props");
+                var projectPropsPathList = ProjectReferences ?? new List<string>();
+                GenerateProjectsPropsFile(projectPropsPathList, projectPropsPath);
 
-            // Projects.g.props - contains generated project reference dependencies
-            var projectPropsPath = Path.Combine(targetProjectDir, "Projects.g.props");
-            var projectPropsPathList = ProjectReferences ?? new List<string>();
-            GenerateProjectsPropsFile(projectPropsPathList, projectPropsPath);
+                // Packages.g.props - contains generated package dependencies
+                var packagePropsPath = Path.Combine(targetProjectDir, "Packages.g.props");
+                var packagePropsPathList = PackageReferences ?? new List<string>();
+                GeneratePackagesPropsFile(packagePropsPathList, packagePropsPath);
 
-            // Packages.g.props - contains generated package dependencies
-            var packagePropsPath = Path.Combine(targetProjectDir, "Packages.g.props");
-            var packagePropsPathList = PackageReferences ?? new List<string>();
-            GeneratePackagesPropsFile(packagePropsPathList, packagePropsPath);
+                // GlobalUsing.g.cs file.
+                var globalUsingText = File.ReadAllText(Path.Combine(sourceProjectDir, "GlobalUsing.g.cs"));
+                var globlaUsingPath = Path.Combine(targetProjectDir, "GlobalUsing.g.cs");
+                var usings = GlobalUsings ?? new List<string>();
+                GenerateGlobalUsingFile(usings, globalUsingText, globlaUsingPath);
 
-            // GlobalUsing.g.cs file.
-            var globalUsingText = File.ReadAllText(Path.Combine(sourceProjectDir, "GlobalUsing.g.cs"));
-            var globlaUsingPath = Path.Combine(targetProjectDir, "GlobalUsing.g.cs");
-            var usings = GlobalUsings ?? new List<string>();
-            GenerateGlobalUsingFile(usings, globalUsingText, globlaUsingPath);
+                // User.props file if it does not exist. We create it to remind the user
+                // they can use it to extend their project.
+                var userPropsPath = Path.Combine(targetProjectDir, "User.props");
+                GenerateUserPropsFile("", userPropsPath);
 
-            // User.props file if it does not exist. We create it to remind the user
-            // they can use it to extend their project.
-            var userPropsPath = Path.Combine(targetProjectDir, "User.props");
-            GenerateUserPropsFile("", userPropsPath);
-
-            // LICENSE.TXT file if it does not exist. We create it to remind the user
-            // they should add a License file to their project.
-            var licensePath = Path.Combine(targetProjectDir, "LICENSE.TXT");
-            GenerateLicenseFile("", licensePath);
-
+                // LICENSE.TXT file if it does not exist. We create it to remind the user
+                // they should add a License file to their project.
+                var licensePath = Path.Combine(targetProjectDir, "LICENSE.TXT");
+                GenerateLicenseFile("", licensePath);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error generating {GetType().Name}: {projectName}, {ex.Message}");
+            }
         }
     }
 }

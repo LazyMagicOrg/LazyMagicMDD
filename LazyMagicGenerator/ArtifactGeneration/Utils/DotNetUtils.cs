@@ -19,6 +19,19 @@ namespace LazyMagic
 
     public static class DotNetUtils
     {
+        public static string GetCsprojFile(string projectDir)
+        {
+            var csprojFiles = Directory.GetFiles(projectDir, "*.csproj").Select(path => Path.GetFileName(path)).ToList();
+
+            if (csprojFiles.Count > 1)
+                throw new Exception($"Error, multiple csproj files found");
+
+            if (csprojFiles.Count == 0)
+                throw new Exception($"Error, no csproj file found");
+
+            return csprojFiles[0];
+        }
+
         public static void CopyProject(string sourcePath, string destinationPath, List<string> filesToExclude)
         {
             List<Glob> globs = filesToExclude.Select(x => Glob.Parse(x)).ToList();
@@ -289,10 +302,12 @@ namespace LazyMagic
         }   
         public static void GenerateLicenseFile(string licenseText, string filePath)
         {
+            if (File.Exists(filePath)) return;
             File.WriteAllText(filePath, licenseText);
         }   
         public static void GenerateUserPropsFile(string userPropsText, string filePath)
         {
+            if (File.Exists(filePath)) return;
             if(string.IsNullOrEmpty(userPropsText))
                 userPropsText = "<Project></Project>";  
             File.WriteAllText(filePath, userPropsText);

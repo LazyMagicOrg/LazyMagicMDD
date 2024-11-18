@@ -13,22 +13,50 @@ namespace LazyMagic
 
         private Dictionary<string, Type> ArtifactTypes = new Dictionary<string, Type>
         {
-            {"DotNetSchema", typeof(DotNetSchemaProject) },
-            {"DotNetRepo", typeof(DotNetRepoProject) },
-            {"DotNetController", typeof(DotNetControllerProject) },
-            {"DotNetLambda", typeof(DotNetLambdaProject) },
-            {"DotNetWebSocket", typeof(DotNetWebSocketProject) },   
-            {"DotNetLocalWebApi", typeof(DotNetLocalWebApiProject) },
-            {"DotNetAuthorization", typeof(DotNetAuthorizationProject) },
-            {"DotNetSDK", typeof(DotNetSDKProject) },
-            {"AwsLambdaResource", typeof(AwsLambdaResource) },
+
+            // Api Artifacts
             {"AwsHttpApiResource", typeof(AwsHttpApiResource) },
-            {"AwsWebSocketApiResource", typeof(AwsWebSocketApiResource) },
+            {"AwsWSApiResource", typeof(AwsWSApiResource) },
+            {"DotNetHttpApiSDKProject", typeof(DotNetHttpApiSDKProject) },
+            {"DotNetWSApiSDKProject", typeof(DotNetHttpApiSDKProject) },
+
+            // Authentication Artifacts
             {"AwsCognitoResource", typeof(AwsCognitoResource) },
-            {"AwsServiceStackTemplate",typeof(AwsServiceStackTemplate) },
+
+            // Authorization Artifacts
+            {"DotNetAuthorizationProject", typeof(DotNetAuthorizationProject) },
+
+            // Container Artifacts
+            {"AwsApiLambdaResource", typeof(AwsApiLambdaResource) },
+            {"AwsSQSLambdaResource", typeof(AwsSQSLambdaResource) },
+            {"AwsWSApiLambdaResource", typeof(AwsWSApiLambdaResource) },
+            {"DotNetApiLambdaProject", typeof(DotNetApiLambdaProject) },
+            {"DotNetWSApiLambdaProject", typeof(DotNetWSApiLambdaProject) },
+
+            // Deployment Artifacts
             {"AwsDeploymentStackTemplate", typeof(AwsDeploymentStackTemplate)},
+
+            // Module Artifacts
+            {"DotNetControllerProject", typeof(DotNetControllerProject) },
+
+            // Queue Artifacts
+            {"AwsSQSResource",typeof(AwsSQSResource) },
+
+            // Schema Artifacts
+            {"DotNetRepoProject", typeof(DotNetRepoProject) },
+            {"DotNetSchemaProject", typeof(DotNetSchemaProject) },
+          
+            // Service Artifacts
+            {"AwsServiceStackTemplate",typeof(AwsServiceStackTemplate) },
+            {"DotNetLocalWebApiProject", typeof(DotNetLocalWebApiProject) },
+
+            // Tenancy Artifacts
             {"AwsTenancyStackTemplate",typeof(AwsTenancyStackTemplate) },
-            //{"AwsWebAppStack",typeof(AwsWebAppStackResource) }
+
+
+            // General
+            {"DotNetProject", typeof(DotNetProject) },
+
         };
         public bool Accepts(Type type)
         {

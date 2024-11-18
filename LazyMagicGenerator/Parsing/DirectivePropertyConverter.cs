@@ -23,6 +23,7 @@ namespace LazyMagic
             {"WebApp", typeof(WebApp)},
             {"Tenancy", typeof(Tenancy)},
             {"Deployment", typeof(Deployment)},
+            {"Queue", typeof(Queue)},
         };
 
         public bool Accepts(Type type)

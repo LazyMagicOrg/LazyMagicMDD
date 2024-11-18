@@ -14,7 +14,6 @@ namespace LazyMagic
         public List<string> OpenApiSpecs { get; set; } = new List<string>();
         public List<string> Containers { get; set; } = new List<string>();
         public string Authentication { get; set; } = null;
-        public string ApiPrefix { get; set; } = null;   
         #endregion
 
         public async Task ProcessAsync( LzSolution solution)

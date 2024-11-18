@@ -11,22 +11,20 @@ namespace LazyMagic
     public class DotNetProjectBase : ArtifactBase
     {
         public override string Family { get; set; } = "DotNetProject";
-        public string ProjectName { get; set; } = null;
-        public string Namespace { get; set; } = null;
-        public string Runtime { get; set; } = ""; 
-        public List<string> PackageReferences { get; set; } = new List<string>();
-        public List<string> ProjectReferences { get; set; } = new List<string>();
-        public List<string> ServiceRegistrations { get; set; } = new List<string>();
-        public List<string> GlobalUsings { get; set; } = new List<string>();
-        public List<string> Dependencies { get; set; } = new List<string>();
-        public string ExportedProjectPath { get; set; } = "";
-        public string ExportedPackage { get; set; } = "";   
-        public List<string> ExportedPackages { get; set; } = new List<string>();
-        public List<string> ExportedServiceRegistrations { get; set; } = new List<string>();
-        public List<string> ExportedInterfaces { get; set; } = new List<string>();
-        public List<string> ExportedGlobalUsings { get; set; } = new List<string>();
-        public List<string> ExportedOpenApiSpecs { get; set; } = new List<string>();
-        public List<(string path,List<string> operations)> ExportedPathOps { get; set; } = new List<(string path, List<string> operations)>();
+        public virtual string Runtime { get; set; } = ""; 
+        public virtual List<string> PackageReferences { get; set; } = new List<string>();
+        public virtual List<string> ProjectReferences { get; set; } = new List<string>();
+        public virtual List<string> ServiceRegistrations { get; set; } = new List<string>();
+        public virtual List<string> GlobalUsings { get; set; } = new List<string>();
+        public virtual List<string> Dependencies { get; set; } = new List<string>();
+        public virtual string ExportedProjectPath { get; set; } = "";
+        public virtual string ExportedPackage { get; set; } = "";   
+        public virtual List<string> ExportedPackages { get; set; } = new List<string>();
+        public virtual List<string> ExportedServiceRegistrations { get; set; } = new List<string>();
+        public virtual List<string> ExportedInterfaces { get; set; } = new List<string>();
+        public virtual List<string> ExportedGlobalUsings { get; set; } = new List<string>();
+        public virtual List<string> ExportedOpenApiSpecs { get; set; } = new List<string>();
+        public virtual List<(string path,List<string> operations)> ExportedPathOps { get; set; } = new List<(string path, List<string> operations)>();
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {             

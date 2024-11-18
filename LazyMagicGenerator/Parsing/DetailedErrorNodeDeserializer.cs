@@ -31,7 +31,7 @@ namespace LazyMagic
                 //                      $"  At line {ex.Start.Line}, column {ex.Start.Column}\n" +
                 //                      $"  {ex.Message}\n" +
                 //                      $"  The error occurred in the property: {propertyPath}";
-                string errorMessage = $"{propertyPath} Error";
+                string errorMessage = $"{propertyPath} Error, " + ex.Message;
 
                 if (ex.InnerException != null && !string.IsNullOrEmpty(ex.InnerException.Message))
                 {

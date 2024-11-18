@@ -5,13 +5,13 @@ namespace LazyMagic
 {
     public class ArtifactBase
     {
-        public string Key { get; set; } = "";
+        public virtual string Key { get; set; } = "";
         public virtual string Family { get; set; } = "";
-        public string Type { get; set; } = "";
-        public string Template { get; set; }
-        public string OutputFolder { get; set; } 
-        public string NameSuffix { get; set; } 
-        public string ExportedName { get; set; } 
+        public virtual string Type { get; set; } = "";
+        public virtual string Template { get; set; }
+        public virtual string OutputFolder { get; set; } 
+        public virtual string NameSuffix { get; set; } 
+        public virtual string ExportedName { get; set; } 
         [YamlIgnore]
         public virtual string ProjectFilePath { get; set;  } = "";
         public virtual void AssignDefaults(ArtifactBase artifactBase)

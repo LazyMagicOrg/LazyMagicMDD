@@ -7,12 +7,16 @@ using static LazyMagic.LzLogger;
 
 namespace LazyMagic
 {
-  
+    /// <summary>
+    /// Generate a AWS::Cognito::UserPool resource suitable for 
+    /// inclusion in an AWS SAM template. The resource is in 
+    /// yaml format and available in the ExportedAwsResourceDefinition string property.
+    /// </summary>
     public class AwsCognitoResource : ArtifactBase
     {
         public int SecurityLevel { get; set; } = 1; // defaults to JWT
-        public string ExportedResource { get; set; } = null;   
-        public string ExportedResourceName { get; set; } = null;    
+        public string ExportedAwsResourceDefinition { get; set; } = null;   
+        public string ExportedAwsResourceName { get; set; } = null;    
         public int ExportedSecurityLevel { get; set; }
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
@@ -20,7 +24,7 @@ namespace LazyMagic
             Authentication directive = (Authentication)directiveArg;    
 
             // set the stack name 
-            var resourceName = directive.Key;
+            var resourceName = directive.Key + NameSuffix ?? "";
             await InfoAsync($"Generating {directive.Key} {resourceName}");
             var templatePath = Template ?? "AWSTemplates/sam.service.cognito.jwt.managed.yaml";    
 
@@ -29,8 +33,8 @@ namespace LazyMagic
 
             // Exports
             ExportedName = resourceName;
-            ExportedResourceName = resourceName;
-            ExportedResource = template;
+            ExportedAwsResourceName = resourceName;
+            ExportedAwsResourceDefinition = template;
             ExportedSecurityLevel = SecurityLevel;
             
         }

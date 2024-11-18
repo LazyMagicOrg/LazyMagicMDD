@@ -24,4 +24,8 @@
 	  <!--<PackageReference Include="YamlDotNet" Version="13.7.1" />-->	  
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="ArtifactGeneration\WebAppArtifacts\" />
+  </ItemGroup>
+
 </Project>

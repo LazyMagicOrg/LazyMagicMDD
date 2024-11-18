@@ -23,6 +23,7 @@ namespace LazyMagic
         #region Properties
         public string SchemaProject { get; set; } ="SchemaProject";
         public override string ProjectFilePath => ExportedProjectPath;
+        public override string NameSuffix { get; set; } = "Repo";   
         public List<string> ExportedEntities { get; set; } = new List<string>();
         #endregion
 
@@ -77,43 +78,50 @@ namespace LazyMagic
                 OpenApiDocument openApiDocument = solution.AggregateSchemas;
 
                 // Set project name and namespace
-                var projectName = ProjectName ?? directive.Key;
-                projectName += NameSuffix ?? ""; // Usually "Repo"
-                var nameSpace = Namespace ?? projectName;
+                var projectName =  directive.Key + NameSuffix ?? "";
+                var nameSpace = projectName;
                 await InfoAsync($"Generating {directive.Key} {projectName}");
 
                 // Get Schema Project - each DotNetRepo project is paired with a DotNetSchema project.
-                var dotnetSchemaProject = directive.Artifacts.Where(x => x.Value.Type.Equals("DotNetSchema")).FirstOrDefault().Value;
+                var dotnetSchemaProject = directive.Artifacts.Where(x => x.Value is DotNetSchemaProject).FirstOrDefault().Value as DotNetSchemaProject;
+                if(dotnetSchemaProject == null)
+                    throw new Exception($"SchemaProject not found for {directive.Key} {projectName}");
 
-                // Get Dependencies
-                // A DotNetRepoProject depends on a DotNetSchemaProject. Get the schema project exports.
-                var dependantSchemaArtifacts = solution.Directives.GetArtifactsByType(directive.Schemas, "DotNetSchema");
-                dependantSchemaArtifacts.Add(dotnetSchemaProject);
-                foreach (var dotNetSchemaArtifact in dependantSchemaArtifacts)
-                {
-                    var dotNetSchemaProject = dotNetSchemaArtifact as DotNetSchemaProject;
-                    ProjectReferences.Add(dotNetSchemaProject.ExportedProjectPath);
-                    GlobalUsings.AddRange(dotNetSchemaProject.ExportedGlobalUsings);
-                    ExportedEntities.AddRange(dotNetSchemaProject.ExportedEntities);
-                }
-                var dependantRepoArtifacts = solution.Directives.GetArtifactsByType(directive.Schemas, "DotNetRepo");
-                foreach (var dotNetRepoArtifact in dependantRepoArtifacts)
-                {
-                    var dotNetRepoProject = dotNetRepoArtifact as DotNetRepoProject;
-                    ProjectReferences.Add(dotNetRepoProject.ExportedProjectPath);
-                    GlobalUsings.AddRange(dotNetRepoProject.ExportedGlobalUsings);
-                    ServiceRegistrations.AddRange(dotNetRepoProject.ExportedServiceRegistrations);
-                }
+                ProjectReferences.Add(dotnetSchemaProject.ExportedProjectPath);
+                GlobalUsings.AddRange(dotnetSchemaProject.ExportedGlobalUsings);
+                ExportedEntities.AddRange(dotnetSchemaProject.ExportedEntities);
+
+
+                //// Get Dependencies
+                //// A DotNetRepoProject depends on a DotNetSchemaProject. Get the schema project exports.
+                //var dependantSchemaArtifacts = solution.Directives.GetArtifactsByType(directive.Schemas, typeof(DotNetSchemaProject));
+                //dependantSchemaArtifacts.Add(dotnetSchemaProject);
+                //foreach (var dotNetSchemaArtifact in dependantSchemaArtifacts)
+                //{
+                //    var dotNetSchemaProject = dotNetSchemaArtifact as DotNetSchemaProject;
+                //    ProjectReferences.Add(dotNetSchemaProject.ExportedProjectPath);
+                //    GlobalUsings.AddRange(dotNetSchemaProject.ExportedGlobalUsings);
+                //    ExportedEntities.AddRange(dotNetSchemaProject.ExportedEntities);
+                //}
+                //var dependantRepoArtifacts = solution.Directives.GetArtifactsByType(directive.Schemas, typeof(DotNetRepoProject));
+                //foreach (var dotNetRepoArtifact in dependantRepoArtifacts)
+                //{
+                //    var dotNetRepoProject = dotNetRepoArtifact as DotNetRepoProject;
+                //    ProjectReferences.Add(dotNetRepoProject.ExportedProjectPath);
+                //    GlobalUsings.AddRange(dotNetRepoProject.ExportedGlobalUsings);
+                //    ServiceRegistrations.AddRange(dotNetRepoProject.ExportedServiceRegistrations);
+                //}
 
                 // Copy the _template project to the target project. Removes *.g.* files.
                 var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
-                var filesToExclude = new List<string> { "Repo.csproj", "User.props", "SRCREADME.md" };
+                var csprojFileName = GetCsprojFile(sourceProjectDir);
+                var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md" };
                 CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
 
                 // Create/Update the Repo.csproj file.
                 File.Copy(
-                    Path.Combine(sourceProjectDir, "Repo.csproj"),
+                    Path.Combine(sourceProjectDir, csprojFileName),
                     Path.Combine(targetProjectDir, projectName + ".csproj"),
                     overwrite: true);
 
@@ -146,14 +154,6 @@ namespace LazyMagic
                 // Remove the API class so we only have schema classes
                 root = RemoveClass(root, projectName); // The API class is named the same as the projectName.
 
-                // Generate repo class for each dto
-                //var classDeclarations = root
-                //    .DescendantNodes().OfType<NamespaceDeclarationSyntax>()
-                //    .First()
-                //        ?.DescendantNodes().OfType<ClassDeclarationSyntax>()
-                //        .Where(x => schemaItems.Contains(x.Identifier.ValueText))
-                //        .GroupBy(x => x.Identifier.ValueText)
-                //        .ToList(); // ex: OrderController
                 var classDeclarations = root
                     .DescendantNodes().OfType<NamespaceDeclarationSyntax>()
                     .First()
@@ -191,7 +191,7 @@ namespace LazyMagic
                 ExportedPackages = PackageReferences;
             } catch (Exception ex) 
             { 
-                throw new Exception($"Error generating DotNetRepoProject: {ex.Message}", ex);   
+                throw new Exception($"Error generating {GetType().Name} {ex.Message}", ex);   
             }
         }
         private static void GenerateServiceRegistrations(List<string> repos, List<string> services, string nameSpace, string projectName, string filePath)

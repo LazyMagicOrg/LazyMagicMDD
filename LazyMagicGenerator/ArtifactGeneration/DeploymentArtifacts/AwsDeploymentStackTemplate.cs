@@ -9,7 +9,6 @@ namespace LazyMagic
 {
     public class AwsDeploymentStackTemplate : ArtifactBase
     {
-        public string StackName { get; set; } = null;
         public string ExportedStackName { get; set; } = null;
         public string ExportedTemplatePath { get; set; } = null;
 
@@ -18,8 +17,7 @@ namespace LazyMagic
             Deployment directive = (Deployment)directiveArg;
 
             // set the stack name 
-            var stackName = StackName ?? directive.Key;
-            stackName += NameSuffix; // usually nothing 
+            var stackName = directive.Key + NameSuffix ?? "";
             await InfoAsync($"Generating {directive.Key} {stackName}");
 
             // Get the template and replace __tokens__

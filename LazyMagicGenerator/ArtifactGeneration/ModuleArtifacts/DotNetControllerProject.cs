@@ -26,14 +26,15 @@ namespace LazyMagic
         #endregion
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {
+
+            var projectName = directiveArg.Key + NameSuffix ?? "";
+
             try
             {
                 Module directive = (Module)directiveArg;
 
                 // Set the project name and namespace
-                var projectName = ProjectName ?? directive.Key;
-                projectName += NameSuffix ?? ""; // Usually "Controller"
-                var nameSpace = Namespace ?? projectName;
+                var nameSpace = projectName;
                 await InfoAsync($"Generating {directive.Key} {projectName}");
 
                 var openApiSpecs = directive.OpenApiSpecs ?? new List<string>();
@@ -43,7 +44,7 @@ namespace LazyMagic
 
                 //  Get artifact dependencies
                 var interfaces = new List<string>() { $"I{projectName}Authorization" };
-                var dependantRepoArtifacts = solution.Directives.GetArtifactsByType(schemas, "DotNetRepo");
+                var dependantRepoArtifacts = solution.Directives.GetArtifactsByTypeName(schemas, "DotNetRepo");
                 foreach (var dotNetRepoArtifact in dependantRepoArtifacts)
                 {
                     var dotNetRepoProject = dotNetRepoArtifact as DotNetRepoProject;
@@ -62,18 +63,20 @@ namespace LazyMagic
                 // Copy the template project to the target project. Removes *.g.* files.
                 var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
-                var filesToExclude = new List<string> { "Controller.csproj", "User.props", "SRCREADME.md"};
+                var csprojFileName = GetCsprojFile(sourceProjectDir);
+                var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md"};
                 CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
 
                 // Create/Update the Repo.csproj file.
                 File.Copy(
-                    Path.Combine(sourceProjectDir, "Controller.csproj"),
+                    Path.Combine(sourceProjectDir, csprojFileName),
                     Path.Combine(targetProjectDir, projectName + ".csproj"),
                     overwrite: true);
 
                 GenerateCommonProjectFiles(sourceProjectDir, targetProjectDir);
 
                 // Generate classes using NSwag 
+                // Note that NSWAG is hardcoded to add 'Controller' to the classname.
                 var nswagSettings = new CSharpControllerGeneratorSettings
                 {
                     UseActionResultType = true,
@@ -97,7 +100,7 @@ namespace LazyMagic
 
                 GenerateImplClassGenFile(projectName, interfaces, Dependencies, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Impl") + ".g.cs"); // This is a partial class containing the constructor with the repo arguments. Suffix: 'Impl.g.cs'
 
-                GenerateServiceRegistrationsClass(projectName, nameSpace, ServiceRegistrations, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Registration") + ".g.cs"); // This class contains the extension methods to register necesssry services
+                GenerateServiceRegistrationsClass(projectName, nameSpace, ServiceRegistrations, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Registrations") + ".g.cs"); // This class contains the extension methods to register necesssry services
 
                 // Exports
                 // Write Modified OpenApi specs to file
@@ -117,7 +120,7 @@ namespace LazyMagic
             } 
             catch (Exception ex)
             {
-                throw new Exception("Error Generating DotNetControllerProject", ex);
+                throw new Exception($"Error Generating {GetType().Name} for {projectName}");
             }
         }
         private static List<string> GetRequiredSchemas(SolutionBase solution, List<string> schemaEntities)
@@ -191,13 +194,13 @@ public interface I{projectName}Authorization : ILzAuthorization
 public partial class {projectName}Authorization : LzAuthorization, I{projectName}Authorization
 {{
     
-    public async Task<List<string>> GetUserDefaultPermissionsAsync(string lzUserId, string userName, string table)
+    public virtual async Task<List<string>> GetUserDefaultPermissionsAsync(string lzUserId, string userName, string table)
     {{
         // TODO: generated code here
         return await Task.FromResult(new List<string>());
     }}
 
-    public async Task LoadDefaultPermissionsAsync()
+    public virtual async Task LoadDefaultPermissionsAsync()
     {{
         // TODO: generatedcode here
         await Task.CompletedTask;
@@ -585,7 +588,8 @@ $@"
 // <auto-generated>
 //     Generated by LazyMagic, do not edit directly. Changes will be overwritten.
 //     Create your own cs file for this partial class and implement any endpoint methods 
-//     not having an x-lz-gencall attribute
+//     not having an x-lz-gencall attribute.
+//     Note that NSWAG is hardcoded to add 'Controller' to the classname.
 // </auto-generated>
 //----------------------
 namespace {projectName}
@@ -619,15 +623,17 @@ namespace {projectName}
 //----------------------
 namespace {nameSpace}
 {{
-    public static class {projectName}Registrations 
+    public static partial class {projectName}Registrations 
     {{
         public static IServiceCollection Add{projectName}(this IServiceCollection services) 
         {{
             services.TryAddSingleton<I{projectName}Authorization, {projectName}Authorization>();
             services.TryAddSingleton<I{projectName}Controller, {projectName}ControllerImpl>();
             {string.Join("\r\n\t\t\t", registrations.Select(x => x))}
+            CustomConfigurations(services);
             return services;            
         }}
+        static partial void CustomConfigurations(IServiceCollection sdervices);
     }}
 }}
 ";
