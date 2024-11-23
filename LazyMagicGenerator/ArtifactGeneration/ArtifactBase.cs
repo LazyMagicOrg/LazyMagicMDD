@@ -5,9 +5,6 @@ namespace LazyMagic
 {
     public class ArtifactBase
     {
-        public virtual string Key { get; set; } = "";
-        public virtual string Family { get; set; } = "";
-        public virtual string Type { get; set; } = "";
         public virtual string Template { get; set; }
         public virtual string OutputFolder { get; set; } 
         public virtual string NameSuffix { get; set; } 

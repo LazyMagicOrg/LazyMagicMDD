@@ -32,6 +32,8 @@ namespace LazyMagic
     {
 
         #region Properties
+        public override string Template { get; set; } = "ProjectTemplates/WebApi";
+        public override string OutputFolder { get; set; } = "";
         public override string ProjectFilePath => ExportedProjectPath;
         #endregion
 
@@ -114,7 +116,6 @@ namespace LazyMagic
                 GenerateCustomRoutingMiddlewareFile(projectName, nameSpace, containerPrefixes, Path.Combine(solution.SolutionRootFolderPath, outputFolder, projectName, $"CustomRoutingMiddleware") + ".g.cs");
 
                 // Exports
-                ExportedName = projectName;
                 ExportedProjectPath = Path.Combine(outputFolder, projectName, projectName + ".csproj");
 
             }

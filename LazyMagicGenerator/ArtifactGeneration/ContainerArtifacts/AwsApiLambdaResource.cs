@@ -5,6 +5,7 @@ using System.Linq;
 using System.Collections.Generic;
 using static LazyMagic.DotNetUtils;
 using static LazyMagic.LzLogger;
+using Microsoft.AspNetCore.Routing.Template;
 
 namespace LazyMagic
 {
@@ -15,6 +16,7 @@ namespace LazyMagic
     /// </summary>
     public class AwsApiLambdaResource : ArtifactBase
     {
+        public override string Template { get; set; } = "AWSTemplates/Snippets/sam.service.apilambda.yaml";
         public string ExportedContainerKey { get; set; } = null;
         public string ExportedAwsResourceDefinition { get; set; } = "";
         public string ExportedAwsResourceName { get; set; } = "";
@@ -39,7 +41,8 @@ namespace LazyMagic
                 await InfoAsync($"Generating {directive.Key}Resource for {lambdaName}");
 
                 // Get the DotNetLambdaProject Artifact. There should only be one.
-                var dotNetLambdaProject = directive.Artifacts.Values
+                var dotNetLambdaProject = directive.Artifacts
+                    .Values
                     .Where(x => x is DotNetApiLambdaProject)
                     .FirstOrDefault() as DotNetProjectBase;   
                 if(dotNetLambdaProject == null) 
@@ -47,10 +50,12 @@ namespace LazyMagic
                 var outputFolder = dotNetLambdaProject.OutputFolder;
 
                 // Get the template and replace __tokens__
-                var template = Template ?? "AWSTemplates/Snippets/sam.service.apilambda.yaml";
+                var template = Template;
                 var templateText = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, template));
                 
                 templateText = templateText
+                    .Replace("__ResourceGenerator__", this.GetType().Name)
+                    .Replace("__TemplateSource__",Template)
                     .Replace("__LambdaName__", lambdaName)
                     .Replace("__OutputDir__", outputFolder)
                     .Replace("__MemorySize__", MemorySize.ToString())
@@ -62,7 +67,6 @@ namespace LazyMagic
 
                 // Exports
                 ExportedContainerKey = directive.Key;
-                ExportedName = lambdaName;
                 ExportedAwsResourceName = lambdaName;
                 ExportedAwsResourceDefinition = templateText;
 

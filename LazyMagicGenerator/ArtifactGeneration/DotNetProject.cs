@@ -45,7 +45,6 @@ namespace LazyMagic
                 GenerateCommonProjectFiles(sourceProjectDir, targetProjectDir);
 
                 // Exports
-                ExportedName = projectName;
                 ProjectFilePath = Path.Combine(OutputFolder, projectName, projectName + ".csproj");
                 ExportedGlobalUsings = GlobalUsings;
                 ExportedGlobalUsings.Add(nameSpace);

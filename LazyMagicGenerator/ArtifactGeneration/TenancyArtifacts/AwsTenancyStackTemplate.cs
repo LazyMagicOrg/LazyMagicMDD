@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using static LazyMagic.LzLogger;
 using System.Text;
 using CommandLine;
+using NJsonSchema.CodeGeneration;
 
 namespace LazyMagic
 {
@@ -19,6 +20,16 @@ namespace LazyMagic
     public class AwsTenancyStackTemplate : ArtifactBase
     {
         public string ExportedTemplatePath { get; set; } = null;
+        public override string Template { get; set; } = "AWSTemplates/Snippets/sam.tenant.yaml";
+        public string CloudFrontSnippet { get; set; } = "AWSTemplates/Snippets/sam.tenant.cloudfront.yaml";
+        public string CloudFrontWebAppSnippet { get; set; } = "AWSTemplates/Snippets/sam.tenant.cloudfront.webapp.yaml";    
+        public string CloudFrontApiSnippet { get; set; } = "AWSTemplates/Snippets/sam.tenant.cloudfront.api.yaml";  
+        public string CloudFrontApiOriginSnippet { get; set; } = "AWSTemplates/Snippets/sam.tenant.cloudfront.apiorigin.yaml";
+        public string CloudFrontWsSnippet { get; set; } = "AWSTemplates/Snippets/sam.tenant.cloudfront.ws.yaml";
+        public string CloudFrontWsOriginSnippet { get; set; } = "AWSTemplates/Snippets/sam.tenant.cloudfront.wsorigin.yaml";
+        public string CloudFrontWebAppOriginSnippet { get; set; } = "AWSTemplates/Snippets/sam.tenant.cloudfront.webapporigin.yaml";
+        public string CloudFrontLandingPageFunctionSnippet { get; set; } = "AWSTemplates/Snippets/sam.tenant.cloudfront.landingpage.yaml";
+        public string DeployScriptSnippet { get; set; } = "AWSTemplates/Snippets/Deploy-Tenant-Stack.ps1";
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {
@@ -34,19 +45,38 @@ namespace LazyMagic
                 if (string.IsNullOrEmpty(Template)) Template = null;
 
                 var templateBuilder = new StringBuilder();
+               
                 // Get the template and replace __tokens__
-                templateBuilder.Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, Template ?? "AWSTemplates/Snippets/sam.tenant.yaml")));
-                var tenantDeployScriptSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/Deploy-Tenant-Stack.ps1"));
-                var teantCloudFrontSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.tenant.cloudfront.yaml"));
-                var tenantCloudFrontWebAppSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.tenant.cloudfront.webapp.yaml"));
-                var tenantCloudFrontApiSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.tenant.cloudfront.api.yaml"));
-                var tenantCloudFrontApiOriginSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.tenant.cloudfront.apiorigin.yaml"));
-                var tenantCloudFrontWsSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.tenant.cloudfront.ws.yaml"));
-                var tenantCloudFrontWsOriginSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.tenant.cloudfront.wsorigin.yaml"));
-                var tenantCloudFrontWebAppOriginSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.tenant.cloudfront.webapporigin.yaml"));
-                var tenantCloudFrontLandingPageFunctionSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.tenant.cloudfront.landingpage.yaml"));
+                templateBuilder.Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, Template)));
 
-                /* INSERT PARAMETERS */
+                var teantCloudFrontSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CloudFrontSnippet));
+                teantCloudFrontSnippet.Replace("__TemplateSource__", CloudFrontSnippet);
+
+                var tenantCloudFrontWebAppSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CloudFrontWebAppSnippet));
+                tenantCloudFrontWebAppSnippet.Replace("__TemplateSource__", CloudFrontWebAppSnippet);
+
+                var tenantCloudFrontApiSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CloudFrontApiSnippet));
+                tenantCloudFrontApiSnippet.Replace("__TemplateSource__", CloudFrontApiSnippet);
+
+                var tenantCloudFrontApiOriginSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CloudFrontApiOriginSnippet));
+                tenantCloudFrontApiOriginSnippet.Replace("__TemplateSource__", CloudFrontApiOriginSnippet);
+
+                var tenantCloudFrontWsSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CloudFrontWsSnippet));
+                tenantCloudFrontWsSnippet.Replace("__TemplateSource__", CloudFrontWsSnippet);
+
+                var tenantCloudFrontWsOriginSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CloudFrontWsOriginSnippet));
+                tenantCloudFrontWsOriginSnippet.Replace("__TemplateSource__", CloudFrontWsOriginSnippet);
+
+                var tenantCloudFrontWebAppOriginSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CloudFrontWebAppOriginSnippet));
+                tenantCloudFrontWebAppOriginSnippet.Replace("__TemplateSource__", CloudFrontWebAppOriginSnippet);
+
+                var tenantCloudFrontLandingPageFunctionSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CloudFrontLandingPageFunctionSnippet));
+                tenantCloudFrontLandingPageFunctionSnippet.Replace("__TemplateSource__", CloudFrontLandingPageFunctionSnippet);
+
+                var tenantDeployScriptSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, DeployScriptSnippet));
+                tenantDeployScriptSnippet.Replace("__TemplateSource__", DeployScriptSnippet);
+
+                /* #LzServiceParameters# INSERT PARAMETERS */
 
                 var webappsParametersBuilder = new StringBuilder();
                 var webAppNames = GetWebAppNames(solution, directive);
@@ -84,16 +114,15 @@ namespace LazyMagic
 
                 templateBuilder.Replace("#LzServiceParameters#", serviceParametersBuilder.ToString());
 
-
-                /* BUILD CLOUDFRONT TEMPLATE*/
+                /* BUILD CLOUDFRONT TEMPLATE */
                 var cloudFrontBuilder = new StringBuilder(teantCloudFrontSnippet);
+                cloudFrontBuilder.Replace("__ResourceGenerator__", GetType().Name);
 
-                /* INSERT CACHE BEHAVIORS  
+                /* #LzCacheBehaviors# INSERT CACHE BEHAVIORS  
                  * It is necessary to build a dictionary of chache behaviors for each webapp and api
                  * and then sort that list by the path pattern descending to ensure no path is shadowed by another.
                 */
                 var cacheBehaviors = new Dictionary<string, string>();
-
                 foreach (var webAppDirective in GetWebApps(solution, directive))
                 {
 
@@ -116,7 +145,8 @@ namespace LazyMagic
                 var apiDirectives = GetApis(solution, directive);
                 foreach (var apiDirective in apiDirectives)
                 {
-                    var apiArtifact = apiDirective.Artifacts.Values.OfType<IAwsApiResource>().FirstOrDefault();
+                    var apiArtifact = apiDirective.Artifacts.Values
+                        .OfType<IAwsApiResource>().FirstOrDefault();
                     var path = $"/{apiArtifact.ExportedPrefix}/*";
                     var body = tenantCloudFrontApiSnippet
                         .Replace("__PathPattern__", path)
@@ -131,7 +161,7 @@ namespace LazyMagic
                         .ToList());
                 cloudFrontBuilder.Replace("#LzCacheBehaviors#", cacheBehaviorsList);
 
-                /* INSERT WEBAPP ORIGINS */
+                /* #LzWebAppOrigins# INSERT WEBAPP ORIGINS */
                 var webAppOriginsBuilder = new StringBuilder();
                 foreach (var webAppDirective in GetWebApps(solution, directive))
                 {
@@ -142,7 +172,7 @@ namespace LazyMagic
                 }
                 cloudFrontBuilder.Replace("#LzWebAppOrigins#", webAppOriginsBuilder.ToString());
 
-                /* INSERT API ORIGINS */
+                /* "#LzApiOrigins#" INSERT API ORIGINS */
                 var apiOriginsBuilder = new StringBuilder();
                 foreach (var apiDirective in apiDirectives)
                 {
@@ -153,7 +183,7 @@ namespace LazyMagic
                 var originsText = apiOriginsBuilder.ToString();
                 cloudFrontBuilder.Replace("#LzApiOrigins#", originsText);
 
-                /* LANDING PAGE FUNCTION */
+                /* #LzLandingPageFunction# LANDING PAGE FUNCTION */
                 var landingPageFunction = tenantCloudFrontLandingPageFunctionSnippet;
                 var webAppSelections = new StringBuilder();
                 foreach (var webAppDirective in GetWebApps(solution, directive))
@@ -166,14 +196,16 @@ namespace LazyMagic
                 landingPageFunction = landingPageFunction.Replace("__WebApps__", webAppSelections.ToString());
                 cloudFrontBuilder.Replace("#LzLandingPageFunction#", landingPageFunction);
 
-
-                /* INSERT CLOUDFRONT SECTION INTO STACK TEMPLATE */
-                templateBuilder.Replace("#LzCloudFront#", cloudFrontBuilder.ToString());
+                templateBuilder
+                    .Replace("#LzCloudFront#", cloudFrontBuilder.ToString())
+                    .Replace("__ResourceGenerator__", this.GetType().Name)
+                    .Replace("__TemplateSource__", Template);
 
                 /* SAVE COMPLETED TEMPLATE */
                 var templatePath = Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Generated", templateName);
                 File.WriteAllText(templatePath, templateBuilder.ToString());
 
+                /****************   SCRIPT ******************/
                 /* INSERT __webappstackoutputs__ INTO SCRIPT */
                 var webAppStackReferences = "";
                 foreach (var webAppDirective in GetWebApps(solution, directive))

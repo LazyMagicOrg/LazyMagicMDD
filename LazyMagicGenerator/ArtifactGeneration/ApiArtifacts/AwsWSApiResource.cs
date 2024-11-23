@@ -5,7 +5,6 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Text;
 using static LazyMagic.LzLogger;
-using static LazyMagic.OpenApiUtils;
 
 namespace LazyMagic
 {
@@ -16,8 +15,7 @@ namespace LazyMagic
     /// </summary>
     public class AwsWSApiResource : ArtifactBase, IAwsApiResource
     {
-        public string DefinitionBodySnippet { get; set; } = null;
-        public string PathSnippet { get; set; } = null;
+        public override string Template { get; set; } = "AwsTemplates/Snippets/sam.service.messaging.wsapi.yaml";
         public string ExportedAwsResourceName { get; set; } = null;  
         public string ExportedAwsResourceDefinition { get; set; } = null;
         public string ExportedPath { get; set; } = null;   
@@ -43,7 +41,7 @@ namespace LazyMagic
                 var webSocketFunction = directive.Containers[0];
                 Info($"Generating {directive.Key} {resourceName}");
 
-                var template = DefinitionBodySnippet ?? "AwsTemplates/Snippets/sam.service.messaging.wsapi.yaml";
+                var template = Template;
 
                 var cognitoResource = directive.Authentication;
 
@@ -51,12 +49,13 @@ namespace LazyMagic
                 var templateBuilder = new StringBuilder(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, template)));
 
                 templateBuilder
+                    .Replace("__ResourceGenerator__", this.GetType().Name)
+                    .Replace("__TemplateSource__", Template)
                     .Replace("__WebSocketApi__", resourceName)
                     .Replace("__WebSocketFunction__", webSocketFunction)
                     .Replace("__CognitoResource__", cognitoResource);
 
                 //Exports 
-                ExportedName = resourceName;
                 ExportedAwsResourceName = resourceName;    
                 ExportedAwsResourceDefinition = templateBuilder.ToString();
                 ExportedPrefix = apiPrefix;

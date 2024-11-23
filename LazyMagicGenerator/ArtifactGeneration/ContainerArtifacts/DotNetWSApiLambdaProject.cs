@@ -14,6 +14,8 @@ namespace LazyMagic
     public class DotNetWSApiLambdaProject : DotNetProjectBase
     {
         #region Properties
+        public override string Template { get; set; } = "ProjectTemplates/WSApiLambda";
+       
         #endregion
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {
@@ -53,7 +55,6 @@ namespace LazyMagic
 
 
                 // Exports
-                ExportedName = projectName;
                 ProjectFilePath = Path.Combine(OutputFolder, projectName, projectName + ".csproj");
                 ExportedGlobalUsings = GlobalUsings;
                 ExportedGlobalUsings.Add(nameSpace);

@@ -11,6 +11,9 @@ namespace LazyMagic
 {
     public class DotNetAuthorizationProject : DotNetProjectBase
     {
+        public override string Template { get; set; } = "DotNetTemplates/Authorization";
+
+
         /// <summary>
         /// This process generates an authorization project.
         /// In general, any files from the template project will be copied to the 
@@ -40,14 +43,15 @@ namespace LazyMagic
             // Set the project name and path
             var projectName = directive.Key + NameSuffix ?? "";
             var nameSpace = projectName;
-            ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName) + ".csproj";
-            ExportedGlobalUsings = new List<string> { nameSpace };
-            var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
-            var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
-            var csprojFileName = GetCsprojFile(sourceProjectDir);
-            await InfoAsync($"Generating {directive.Key} {projectName}");
             try
             {
+                ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName) + ".csproj";
+                ExportedGlobalUsings = new List<string> { nameSpace };
+                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
+                var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
+                var csprojFileName = GetCsprojFile(sourceProjectDir);
+                await InfoAsync($"Generating {directive.Key} {projectName}");
+
                 // Copy the template project to the target project. Removes *.g.* files.
                 var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md" };
                 CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);

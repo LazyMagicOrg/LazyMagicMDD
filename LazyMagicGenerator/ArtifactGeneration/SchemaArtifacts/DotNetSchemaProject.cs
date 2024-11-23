@@ -18,8 +18,12 @@ namespace LazyMagic
     {
         #region Properties
         public override string ProjectFilePath => ExportedProjectPath;
-        public override string NameSuffix { get; set; } = "Repo";
+        public override string NameSuffix { get; set; } = "";
+        public override string Template { get; set; } = "ProjectTemplates/Schema";
+        public override string OutputFolder { get; set; } = "Schemas";
+
         public List<string> ExportedEntities { get; set; } = new List<string>();
+       
         #endregion
 
         /// <summary>
@@ -65,7 +69,7 @@ namespace LazyMagic
                 Schema directive = (Schema)directiveArg;
 
                 // Set the project name and namespace
-                
+
                 var nameSpace = projectName;
                 await InfoAsync($"Generating {directive.Key} {projectName}");
 
@@ -76,7 +80,7 @@ namespace LazyMagic
                 var openApiDocument = solution.AggregateSchemas;
 
                 // Get Dependencies 
-                var dependantArtifacts = solution.Directives.GetArtifactsByTypeName(directive.Schemas, "DotNetSchema");
+                var dependantArtifacts = solution.Directives.GetArtifactsByType<DotNetSchemaProject>(directive.Schemas);
                 foreach(var dotNetSchemaArtifact in dependantArtifacts)
                 {
                     var dotNetSchemaProject = dotNetSchemaArtifact as DotNetSchemaProject;
@@ -160,7 +164,6 @@ namespace LazyMagic
                 }
 
                 // Exports
-                ExportedName = projectName;
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName) + ".csproj";
                 ExportedGlobalUsings = new List<string> { nameSpace };
                 ExportedOpenApiSpecs = openApiSpecs;

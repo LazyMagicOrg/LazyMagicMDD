@@ -4,11 +4,13 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Text;
 using static LazyMagic.ArtifactUtils;
+using Microsoft.AspNetCore.Routing.Template;
 
 namespace LazyMagic
 {
     public static class AwsServiceLambdasResources
     {
+     
 
         /// <summary>
         /// Generate the #LzLambdas# content by aggregating all the 
@@ -26,9 +28,10 @@ namespace LazyMagic
         {
             try
             {
+                var template = "AWSTemplates/Snippets/sam.service.lambda.permission.yaml";
                 Service directive = (Service)directiveArg;
 
-                var lambdaPermissionSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.service.lambda.permission.yaml"));
+                var lambdaPermissionSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, template));
                 //var sourceArnSnippet = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Snippets", "sam.sourcearn.yaml"));
 
                 var apiGateways = new List<string>();
@@ -51,12 +54,16 @@ namespace LazyMagic
                     foreach (var apiArtifact in apiArtifacts)
                     {
                         permissions += lambdaPermissionSnippet
+
                             .Replace("__ApiName__", apiArtifact.ExportedAwsResourceName)
                             .Replace("__LambdaName__", lambdaArtifact.ExportedAwsResourceName);   
                     }
                     resourceBuilder.Append(permissions);
                     resourceBuilder.AppendLine();
                 }
+                resourceBuilder
+                    .Replace("__ResourceGenerator__", nameof(AwsServiceLambdasResources))
+                    .Replace("__TemplateSource__",template);
                 var templateResource = resourceBuilder.ToString();
                 return templateResource;
             }
@@ -86,7 +93,7 @@ namespace LazyMagic
             {
                 var lambdaArtifact = artifact as AwsApiLambdaResource;
                 if (lambdaArtifact == null)
-                    throw new Exception($"Error generating AwsService: {directive.Key}, {artifact.Key} artifact isn't a AwsLambdaResource");
+                    throw new Exception($"Error generating AwsService: {directive.Key}, artifact isn't a AwsLambdaResource");
                 lambdas.Add(lambdaArtifact);
             }
             return lambdas;

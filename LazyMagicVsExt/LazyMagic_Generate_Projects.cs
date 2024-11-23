@@ -138,7 +138,7 @@ namespace LazyMagicVsExt
                         if( file.EndsWith(".yaml") || file.EndsWith(".json") || file.EndsWith(".ps1"))
                             AddFileToProject(solutionItemsProject, Path.Combine(solutionRootFolderPath, file));
 
-                    AddProjects(solution, lzSolution.Directives, solutionRootFolderPath, "DotNetProject");
+                    AddProjects<DotNetProjectBase>(solution, lzSolution.Directives, solutionRootFolderPath);
 
                     await logger.InfoAsync("LazyMagic processing complete");
 
@@ -150,12 +150,13 @@ namespace LazyMagicVsExt
             });
         }
 
-        private void AddProjects(Solution4 solution, Directives directives, string solutionRootFolderPath, string family)
+        private void AddProjects<T>(Solution4 solution, Directives directives, string solutionRootFolderPath)
+            where T : DotNetProjectBase
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             foreach (var directive in directives.Values.Where(x => !x.IsDefault))
             {
-                foreach (var artifact in directive.Artifacts.Values.Where(x => x.Family.Equals(family)))
+                foreach (var artifact in directive.Artifacts.Values.OfType<T>())
                 {
                     try
                     {
@@ -176,54 +177,18 @@ namespace LazyMagicVsExt
                             AddProjectToSolutionFolder(
                                 solutionFolderProject,
                                 solutionRootFolderPath,
-                                Path.Combine(solutionRootFolderPath, artifact.ProjectFilePath)
+                                Path.Combine(solutionRootFolderPath,
+                                artifact.ProjectFilePath)
                             );
                         }
                     }
                     catch (Exception ex)
                     {
-                        throw new Exception(ex.Message);    
+                        throw new Exception(ex.Message);
                     }
                 }
             }
-            //try
-            //{
-            //    // Create Solution folder (OutputFolder) if necesarry
-            //    var solutionFolderName = artifact.OutputFolder;
-            //    Project solutionFolderProject = GetProject(new List<string> { solutionFolderName });
-            //    if (solutionFolderProject == null && !string.IsNullOrEmpty(artifact.OutputFolder))
-            //        solutionFolderProject = solution.AddSolutionFolder(artifact.OutputFolder);
-
-            //    // Add the project to the solution folder
-            //    AddProjectToSolutionFolder(
-            //        solutionFolderProject,
-            //        solutionRootFolderPath,
-            //        Path.Combine(solutionRootFolderPath, artifact.ProjectFilePath)
-            //        );
-            //}
-            //catch (Exception ex)
-            //{
-            //    Debug.WriteLine(ex.Message);
-            //}
         }
-
-        //private void AddProjectsOld(Solution4 solution, string solutionFolderName, Directives directives, string solutionRootFolderPath, string family, string type)
-        //{
-        //    ThreadHelper.ThrowIfNotOnUIThread();
-        //    var projectPath = new List<string> { solutionFolderName };
-        //    Project solutionFolderProject = GetProject(projectPath);
-        //    if (solutionFolderProject == null)
-        //        solutionFolderProject = solution.AddSolutionFolder(solutionFolderName);
-        //    var dotNetProjectFilePaths = directives.GetProjectFilePaths(family, type);
-        //    AddProjectsToSolutionFolder(solutionFolderProject, solutionRootFolderPath, dotNetProjectFilePaths);
-        //}
-
-        //private void AddProjectsToSolutionFolder(Project solutionFolderProject, string solutionFolderPath, List<string> projectFilePaths)
-        //{
-        //    ThreadHelper.ThrowIfNotOnUIThread();
-        //    foreach (var folderName in projectFilePaths)
-        //        AddProjectToSolutionFolder(solutionFolderProject, solutionFolderPath, folderName);
-        //}
 
         private void AddProjectToSolutionRoot(Solution4 solution, string solutionRootFolderPath, string projectFilePath)
         {
@@ -337,3 +302,4 @@ namespace LazyMagicVsExt
 
     }
 }
+

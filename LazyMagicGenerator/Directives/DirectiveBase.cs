@@ -48,6 +48,8 @@ namespace LazyMagic
 
                 // Use Newtonsoft.Json to merge the default directive with this directive
                 JObject defaultObject = JObject.FromObject(defaultDirective);
+
+
                 JObject thisObject = JObject.FromObject(this);
                 defaultObject.Merge(thisObject, new JsonMergeSettings
                 {

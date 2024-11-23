@@ -5,6 +5,7 @@ using System.Linq;
 using System.Collections.Generic;
 using static LazyMagic.DotNetUtils;
 using static LazyMagic.LzLogger;
+using Microsoft.AspNetCore.Routing.Template;
 
 namespace LazyMagic
 {
@@ -15,10 +16,10 @@ namespace LazyMagic
     /// </summary>
     public class AwsWSApiLambdaResource : AwsApiLambdaResource
     {
-
+        public override string Template { get; set; } = "AWSTemplates/Snippets/sam.service.messaging.wsapilambda.yaml";
+        public string CognitoPolicyTemplate { get; set; } = "AWSTemplates/Snippets/sam.service.messaging.wsapilambda.cognitopolicy.yaml";    
         public List<string> Authentications { get; set; } = new List<string>();
-        public bool AuthenticationRequired { get; set; }
-        public string WebScoketApi { get; set; }
+        public bool AuthenticationRequired { get; set; } = true;
         public string WebSocketApi { get; set; } = "";
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
@@ -36,12 +37,13 @@ namespace LazyMagic
                 string cognitopolicy = "";
                 if (AuthenticationRequired)
                 {
-                    cognitopolicy = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.service.messaging.wsapilambda.cognitopolicy.yaml"));
+                    cognitopolicy = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CognitoPolicyTemplate));
+                    cognitopolicy.Replace("__TemplateSource__", CognitoPolicyTemplate);
                     if (Authentications.Count == 0)
                         throw new Exception($"{errMsgPrefix} {lambdaName}, Authentication == true but no Authentication services specified.");
                     string userpools = "";
                     foreach (var userpool in Authentications)
-                        userpools += $@"            - !GetAtt {userpool}.Arn
+                        userpools += $@"            - !GetAtt {userpool}UserPool.Arn
 ";
                     cognitopolicy = cognitopolicy.Replace("#UserPoolArns#", userpools);
                 }
@@ -56,10 +58,12 @@ namespace LazyMagic
                 var outputFolder = dotNetLambdaProject.OutputFolder;
 
                 // Get the template and replace __tokens__
-                var template = Template ?? "AWSTemplates/Snippets/sam.service.messaging.wslambda.yaml";
+                var template = Template;
                 var templateText = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, template));
 
                 templateText = templateText
+                    .Replace("__ResourceGenerator__", this.GetType().Name)
+                    .Replace("__TemplateSource__",Template)
                     .Replace("__LambdaName__", lambdaName)
                     .Replace("__OutputDir__", outputFolder)
                     .Replace("__MemorySize__", MemorySize.ToString())
@@ -69,13 +73,13 @@ namespace LazyMagic
                     .Replace("__Runtime__", Runtime)
                     // derived class specific properties
                     .Replace("#CognitoUserPoolsReadPolicy#", cognitopolicy)
+                    .Replace("__WebSocketApi__",WebSocketApi)
                     .Replace("__AuthenticationRequired__", AuthenticationRequired.ToString().ToLower())
                     .Replace("__LambdaName__", lambdaName)
                     .Replace("__OutputDir__", outputFolder);
 
                 // Exports
                 ExportedContainerKey = directive.Key;
-                ExportedName = lambdaName;
                 ExportedAwsResourceName = lambdaName;
                 ExportedAwsResourceDefinition = templateText;
 

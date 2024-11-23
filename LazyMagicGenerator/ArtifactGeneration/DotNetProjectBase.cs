@@ -3,15 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using static LazyMagic.DotNetUtils;
-using static LazyMagic.LzLogger;
-using static LazyMagic.OpenApiUtils;
 
 namespace LazyMagic
 {
     public class DotNetProjectBase : ArtifactBase
     {
-        public override string Family { get; set; } = "DotNetProject";
-        public virtual string Runtime { get; set; } = ""; 
+        
+        public override string OutputFolder { get; set; } = "Containers";
         public virtual List<string> PackageReferences { get; set; } = new List<string>();
         public virtual List<string> ProjectReferences { get; set; } = new List<string>();
         public virtual List<string> ServiceRegistrations { get; set; } = new List<string>();

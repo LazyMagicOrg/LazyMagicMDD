@@ -4,11 +4,13 @@ using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using static LazyMagic.LzLogger;
+using Microsoft.AspNetCore.Routing.Template;
 
 namespace LazyMagic
 {
     public class AwsDeploymentStackTemplate : ArtifactBase
     {
+        public override string Template { get; set; } = "AWSTemplates/sam.service.deployment.yaml";
         public string ExportedStackName { get; set; } = null;
         public string ExportedTemplatePath { get; set; } = null;
 
@@ -21,10 +23,12 @@ namespace LazyMagic
             await InfoAsync($"Generating {directive.Key} {stackName}");
 
             // Get the template and replace __tokens__
-            var template = Template ?? "AWSTemplates/sam.service.deployment.yaml";
+            var template = Template;
+            template
+                .Replace("__ResourceGenerator__", this.GetType().Name)
+                .Replace("__TemplateSource__",Template);
 
             // Exports
-            ExportedName = stackName;
             ExportedStackName = stackName;
             ExportedTemplatePath = template;
         }

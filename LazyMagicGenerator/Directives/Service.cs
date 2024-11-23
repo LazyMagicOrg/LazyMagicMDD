@@ -10,6 +10,7 @@ namespace LazyMagic
 
         #region Properties
         public List<string> Apis { get; set; } = new List<string>();
+        public string WSApi { get; set; } = "";
         public string Name { get; set; }
         #endregion
 

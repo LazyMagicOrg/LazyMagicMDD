@@ -14,6 +14,7 @@ namespace LazyMagic
     public class DotNetApiLambdaProject : DotNetProjectBase
     {
         #region Properties
+        public override string Template { get; set; } = "ProjectTemplates/ApiLambda";
         public string ExportedApiPrefix { get; set; } = "";    
         public string ExportedOpenApiSpec { get; set; } = "";   
         #endregion
@@ -35,7 +36,7 @@ namespace LazyMagic
                 var prefix = directive.ApiPrefix ?? directive.Key;
 
                 // Get controller Dependencies
-                var controllerArtifacts = solution.Directives.GetArtifactsByTypeName(directive.Modules, "DotNetController"); 
+                var controllerArtifacts = solution.Directives.GetArtifactsByType<DotNetControllerProject>(directive.Modules).ToList<ArtifactBase>(); 
 
                 // Get Dependencies
                 ProjectReferences.AddRange(GetExportedProjectReferences(controllerArtifacts));
@@ -73,7 +74,6 @@ namespace LazyMagic
                 GenerateConfigureSvcsFile(projectName, nameSpace, Path.Combine(targetProjectDir, "ConfigureSvcs.g.cs"));
 
                 // Exports
-                ExportedName = projectName;
                 ProjectFilePath = Path.Combine(OutputFolder, projectName, projectName + ".csproj");
                 ExportedGlobalUsings = GlobalUsings;
                 foreach(var contollerProject in controllerProjects)
@@ -88,6 +88,7 @@ namespace LazyMagic
                     ExportedPathOps.AddRange(((DotNetControllerProject)controllerArtificat).ExportedPathOps);
 
                 ExportedApiPrefix = prefix;
+                ExportedName = projectName; // TODO: Check usage. This may be redundant.
                 ExportedOpenApiSpec = Path.Combine(targetProjectDir, "openapi.g.yaml");
 
             } catch (Exception ex)

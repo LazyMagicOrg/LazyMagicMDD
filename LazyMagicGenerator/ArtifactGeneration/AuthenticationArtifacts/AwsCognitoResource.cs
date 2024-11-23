@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using static LazyMagic.LzLogger;
+using Microsoft.AspNetCore.Routing.Template;
 
 namespace LazyMagic
 {
@@ -14,6 +15,7 @@ namespace LazyMagic
     /// </summary>
     public class AwsCognitoResource : ArtifactBase
     {
+        public override string Template { get; set; } = "AWSTemplates/Snippets/sam.service.cognito.jwt.managed.yaml";
         public int SecurityLevel { get; set; } = 1; // defaults to JWT
         public string ExportedAwsResourceDefinition { get; set; } = null;   
         public string ExportedAwsResourceName { get; set; } = null;    
@@ -26,13 +28,13 @@ namespace LazyMagic
             // set the stack name 
             var resourceName = directive.Key + NameSuffix ?? "";
             await InfoAsync($"Generating {directive.Key} {resourceName}");
-            var templatePath = Template ?? "AWSTemplates/sam.service.cognito.jwt.managed.yaml";    
 
-            var template = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, templatePath));
-            template = template.Replace("__CognitoResource__", resourceName);
+            var template = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, Template))
+                .Replace("__ResourceGenerator__", this.GetType().Name)
+                .Replace("__TemplateSource__",Template)
+                .Replace("__CognitoResource__", resourceName);
 
             // Exports
-            ExportedName = resourceName;
             ExportedAwsResourceName = resourceName;
             ExportedAwsResourceDefinition = template;
             ExportedSecurityLevel = SecurityLevel;

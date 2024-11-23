@@ -19,6 +19,9 @@ namespace LazyMagic
     public class DotNetHttpApiSDKProject : DotNetProjectBase
     {
         #region Properties
+        public override string Template { get; set; } = "ProjectTemplates/ClientSDK";
+        public override string OutputFolder { get; set; } = "ClientSDKs";
+
         public override string ProjectFilePath => ExportedProjectPath;
         #endregion
 
@@ -122,7 +125,6 @@ namespace LazyMagic
                 GenerateClientSDKClass(code, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, projectName + ".g.cs"));
 
                 // Exports
-                ExportedName = projectName;
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName + ".csproj");
             } catch (Exception ex)
             {

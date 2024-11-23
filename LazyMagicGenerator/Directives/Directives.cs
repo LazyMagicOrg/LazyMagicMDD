@@ -19,13 +19,6 @@ namespace LazyMagic
         public Directives()
         {
         }
-        public List<string> GetProjectFilePaths(string family, string type) =>
-           this.Values
-               .Where(directive => directive.Type == type && !directive.IsDefault)
-               .SelectMany(directive => directive.Artifacts
-                   .Where(kvp => kvp.Value.Family == family)
-                   .Select(kvp => kvp.Value.ProjectFilePath))
-               .ToList();
         private void AssignDefaults() =>
            Keys.ToList().ForEach(key => this[key].AssignDefaults(this));
         public void Validate()
@@ -185,30 +178,11 @@ namespace LazyMagic
                 await LzLogger.InfoAsync($"{key}\n{yamlText}");
             }
         }
-        public List<ArtifactBase> GetArtifactsByTypeName(string directiveKey, string artifactType)
-        {
-            return this.FirstOrDefault(x => x.Key == directiveKey)
-                .Value
-                .Artifacts?
-                .Where(x => x.Value.Type == artifactType)
-                .Select(x => x.Value)
-                .Distinct()
-                .ToList()
-                ?? new List<ArtifactBase>();
-        }
 
-        public List<ArtifactBase> GetArtifactsByTypeName(List<string> directiveKeys, string artifactType) =>
-           (directiveKeys?.Any() ?? false)
-               ? directiveKeys
-                   .SelectMany(x => GetArtifactsByTypeName(x, artifactType))
-                   .Distinct()
-                   .ToList()
-               : new List<ArtifactBase>();
         public List<T> GetArtifactsByType<T>(string directiveKey) where T : ArtifactBase =>
            this.FirstOrDefault(x => x.Key == directiveKey)
                .Value
-               .Artifacts
-               .Values
+               .Artifacts.Values
                .OfType<T>()
                .Distinct()
                .ToList()
@@ -236,16 +210,14 @@ namespace LazyMagic
         {
             foreach(var directive in this.Values)
             {
-                foreach(var directiveArtifact in directive.Artifacts.Values)
+                foreach(var directiveArtifact in directive.Artifacts)
                 {
-                    if (directiveArtifact == artifact)
+                    if (directiveArtifact.Value == artifact)
                         return directive;
                 }
             }
             return null;
         }
-        public List<DirectiveBase> GetDirectivesByTypeName(string directiveTypeName) =>
-            Values.Where(x => x.Type == directiveTypeName).ToList();
         public static List<Schema> OrderSchemasByReferences(List<Schema> items)
         {
             var graph = new Dictionary<string, HashSet<string>>();

@@ -20,6 +20,8 @@ namespace LazyMagic
     {
         #region Properties
         public override string ProjectFilePath => ExportedProjectPath;
+        public override string OutputFolder { get; set; } = "ClientSDKs";
+
         #endregion
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
@@ -38,7 +40,6 @@ namespace LazyMagic
                 // TODO: Copy the template project to the target project. Removes *.g.* files.
 
                 // Exports
-                ExportedName = projectName;
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName + ".csproj");
             } catch (Exception ex)
             {

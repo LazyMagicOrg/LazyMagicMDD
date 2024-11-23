@@ -6,12 +6,14 @@ using System.Collections.Generic;
 using static LazyMagic.DotNetUtils;
 using static LazyMagic.LzLogger;
 using Newtonsoft.Json;
+using Microsoft.AspNetCore.Routing.Template;
 
 namespace LazyMagic
 {
 
     public class AwsSQSResource : ArtifactBase
     {
+        public override string Template { get; set; } = "AWSTemplates/Snippets/sam.service.messaging.sqs.yaml";
         public string ExportedContainerKey { get; set; } = null;
         public string ExportedAwsResourceDefinition { get; set; } = "";
         public string ExportedAwsResourceName { get; set; } = "";   
@@ -32,17 +34,18 @@ namespace LazyMagic
                 await InfoAsync($"Generating {directive.Key}Resource for {queueName}");
 
                 // Get the template and replace __tokens__
-                var template = Template ?? "AWSTemplates/Snippets/sam.service.messaging.sqs.yaml";
+                var template = Template;
                 var templateText = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, template));
 
                 templateText = templateText
+                    .Replace("__ResourceGenerator__", this.GetType().Name)
+                    .Replace("__TemplateSource__",Template)
                     .Replace("__QueueName__", queueName)
                     .Replace("__VisibilityTimeout__", VisibilityTimeout.ToString())
                     .Replace("__MessageRetentionPeriod__", MessageRetentionPeriod.ToString());
 
                 // Exports
                 ExportedContainerKey = directive.Key;
-                ExportedName = queueName;
                 ExportedAwsResourceName = queueName;
                 ExportedAwsResourceDefinition = templateText;
 

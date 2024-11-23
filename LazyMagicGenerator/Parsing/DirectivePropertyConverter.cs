@@ -38,7 +38,7 @@ namespace LazyMagic
 
             try
             {
-                parser.Consume<MappingStart>();  // Consume the MappingStart event
+                parser.Consume<MappingStart>();  // Consume the MappingStart event for the Directive
                 YamlNode value = null;
                 string type = null;
                 Artifacts artifacts = new Artifacts();
@@ -48,7 +48,7 @@ namespace LazyMagic
                     switch (key)
                     {
                         case "Artifacts":
-                            artifacts = (Artifacts)new ArtifactsPropertyConverter().ReadYaml(parser, typeof(Artifacts));  
+                            artifacts = (Artifacts) new ArtifactsPropertyConverter().ReadYaml(parser, typeof(Artifacts));
                             break;
                         case "Type":
                             type = ConsumeTypeNode(parser);
@@ -64,8 +64,10 @@ namespace LazyMagic
                 }
                 if (type == null) throw new Exception(" Type property is required.");
                 parser.Consume<MappingEnd>();  // Consume the MappingEnd event
+                // The mapping node contains everything except the Artifacts
                 var directiveString = serializer.Serialize(mappingNode);
                 var directive = (DirectiveBase)deserializer.Deserialize(directiveString, DirectiveTypes[type]);
+                // Assign the Directive.Artifacts property
                 directive.Artifacts = artifacts;
                 return directive;
 

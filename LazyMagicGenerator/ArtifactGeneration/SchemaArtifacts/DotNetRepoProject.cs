@@ -21,9 +21,10 @@ namespace LazyMagic
     {
 
         #region Properties
-        public string SchemaProject { get; set; } ="SchemaProject";
         public override string ProjectFilePath => ExportedProjectPath;
-        public override string NameSuffix { get; set; } = "Repo";   
+        public override string NameSuffix { get; set; } = "Repo";
+        public override string Template { get; set; } = "ProjectTemplates/Repo";
+        public override string OutputFolder { get; set; } = "Schemas";
         public List<string> ExportedEntities { get; set; } = new List<string>();
         #endregion
 
@@ -83,7 +84,7 @@ namespace LazyMagic
                 await InfoAsync($"Generating {directive.Key} {projectName}");
 
                 // Get Schema Project - each DotNetRepo project is paired with a DotNetSchema project.
-                var dotnetSchemaProject = directive.Artifacts.Where(x => x.Value is DotNetSchemaProject).FirstOrDefault().Value as DotNetSchemaProject;
+                var dotnetSchemaProject = directive.Artifacts.Values.Where(x => x is DotNetSchemaProject).FirstOrDefault() as DotNetSchemaProject;
                 if(dotnetSchemaProject == null)
                     throw new Exception($"SchemaProject not found for {directive.Key} {projectName}");
 
@@ -181,7 +182,6 @@ namespace LazyMagic
                 GenerateServiceRegistrations(classes, ServiceRegistrations, nameSpace, projectName, Path.Combine(targetProjectDir, "ServiceRepoExtensions.g.cs"));
 
                 // Exports
-                ExportedName = projectName; 
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName) + ".csproj";
                 GlobalUsings.Add(nameSpace);
                 ExportedGlobalUsings = GlobalUsings;

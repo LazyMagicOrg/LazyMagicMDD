@@ -10,6 +10,7 @@ using static LazyMagic.AwsSQSResources;
 using static LazyMagic.ArtifactUtils;
 using System.Text;
 using CommandLine;
+using NJsonSchema.CodeGeneration;
 
 namespace LazyMagic
 {
@@ -23,6 +24,8 @@ namespace LazyMagic
     /// </summary>
     public class AwsServiceStackTemplate : ArtifactBase
     {
+        public override string Template { get; set; } = "AWSTemplates/Snippets/sam.service.yaml";
+        public string  ConfigFunctionTemplate { get; set; } = "AWSTemplates/Snippets/sam.service.cloudfront.configfunction.yaml";
         public string LambdasTemplate { get; set; } = null;
         public string LambdaPermissionsTemplate { get; set; } = null;
         
@@ -35,18 +38,22 @@ namespace LazyMagic
             try
             {
                 Service directive = (Service)directiveArg;
+                var wsApi = directive.WSApi;
 
                 // Set the service name
                
                 await InfoAsync($"Generating {directive.Key} {templateName}");
-                var systemTemplatePath = Template ?? "AWSTemplates/Snippets/sam.service.yaml";
-                var tenantCloudFrontConfigFunctionSnippet = File.ReadAllText(
-                    Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates/Snippets/sam.service.cloudfront.configfunction.yaml"));
+                var systemTemplatePath = Template;
+                var tenantCloudFrontConfigFunctionSnippet = 
+                    File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, ConfigFunctionTemplate))
+                    .Replace("__TemplateSource__", ConfigFunctionTemplate);
 
                 var ouptutsBuilder = new StringBuilder();
 
-                var templateBuilder = new StringBuilder(); 
-                templateBuilder.Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, systemTemplatePath)));
+                var templateBuilder = new StringBuilder()
+                    .Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, systemTemplatePath)))
+                    .Replace("__ResourceGenerator__", this.GetType().Name)
+                    .Replace("__TemplateSource__", Template);
 
                 /* PARAMETERS */
                 var lzParametersBuilder = new StringBuilder();
@@ -122,27 +129,32 @@ namespace LazyMagic
 ";
                     configJson.Append(jsonText);
                 }
-                var config = new StringBuilder();
-                config.AppendLine("#LzConfigFunction start");
-                config.Append(tenantCloudFrontConfigFunctionSnippet);
-                config = config.Replace("__JsonText__", configJson.ToString());
-                config.AppendLine("");
-                config.AppendLine("#LzConfigFunction end");
-                var configText = config.ToString();
+                var wsUrl = string.IsNullOrEmpty(wsApi)
+                    ? "wsUrl: '',"
+                    : "wsUrl: 'wss://${__WebSocketApi__}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentParameter}',"
+                        .Replace("__WebSocketApi__",wsApi);
+
+                var configText = new StringBuilder()
+                    .AppendLine("#LzConfigFunction start")
+                    .Append(tenantCloudFrontConfigFunctionSnippet)
+                    .Replace("__wsUrl__",wsUrl)
+                    .Replace("__JsonText__", configJson.ToString())
+                    .AppendLine("")
+                    .AppendLine("#LzConfigFunction end").ToString();
                 templateBuilder.Replace("#LzConfigFunction#", configText);
 
-
                 /* INSERT LzQueues */
-                var lzQueuesBuilder = new StringBuilder();
-                lzQueuesBuilder.AppendLine("#LzQueues start");
-                lzQueuesBuilder.Append(GenerateQueueResources(solution, directive));
-                lzQueuesBuilder.AppendLine("#LzQeuues end");
+                var lzQueuesBuilder = new StringBuilder()
+                    .AppendLine("#LzQueues start")
+                    .Append(GenerateQueueResources(solution, directive))
+                    .AppendLine("#LzQeuues end");
+
                 templateBuilder.Replace("#LzQueues#", lzQueuesBuilder.ToString());
 
                 /* Additional OUTPUTS */
-
-
-                templateBuilder.Replace("#LzOutputs#", ouptutsBuilder.ToString());
+                templateBuilder
+                    .Replace("#LzOutputs#", ouptutsBuilder.ToString())
+                    .Replace("__ResourceGenerator__", GetType().Name);
 
                 var templatePath = Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Generated", templateName);
                 File.WriteAllText(templatePath, templateBuilder.ToString());
@@ -159,10 +171,13 @@ namespace LazyMagic
 
         private List<IAwsApiResource> GetAwsApiResources(SolutionBase solution, Service directive)
         {
-            var apiResources = new List<IAwsApiResource>();
-            foreach (var apiDirective in directive.Apis.Select(x => solution.Directives[x].Cast<Api>()).ToList())
-                foreach (var artifact in apiDirective.Artifacts.Values.OfType<IAwsApiResource>().ToList())
-                    apiResources.Add(artifact);
+            var apiResources = directive.Apis
+                .Select(x => solution.Directives[x])
+                .OfType<Api>()
+                .SelectMany(apiDirective => apiDirective.Artifacts.Values.OfType<IAwsApiResource>())
+                .Distinct()
+                .ToList();
+
             return apiResources.Distinct().ToList();
         }
         private List<AwsCognitoResource> GetAwsCognitoResources(SolutionBase solution, Service directive)

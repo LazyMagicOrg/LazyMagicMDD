@@ -16,8 +16,10 @@ namespace LazyMagic
     /// </summary>
     public class AwsHttpApiResource : ArtifactBase, IAwsApiResource
     {
-        public string DefinitionBodySnippet { get; set; } = null;
-        public string PathSnippet { get; set; } = null;
+        public override string Template { get; set; } = "AwsTemplates/Snippets/sam.service.httpapi.cognito.yaml";
+        public string DefinitionBodySnippet { get; set; } = "AwsTemplates/Snippets/sam.service.httpapi.definitionbody.yaml";
+        public string PathSnippet { get; set; } = "AwsTemplates/Snippets/sam.service.httpapi.path.yaml";
+        public string CognitoAuthSnippet { get; set; } = "AwsTemplates/Snippets/sam.service.httpapi.cognito.auth.yaml";
         public string ExportedAwsResourceName { get; set; } = null;  
         public string ExportedAwsResourceDefinition { get; set; } = null;
         public string ExportedPath { get; set; } = null;   
@@ -36,23 +38,35 @@ namespace LazyMagic
                 resourceName += NameSuffix ?? "";
                 Info($"Generating {directive.Key} {resourceName}");
 
-                var template = Template ?? "AwsTemplates/Snippets/sam.service.httpapi.cognito.yaml";   
-                var definitionBodySnippet = DefinitionBodySnippet ?? "AwsTemplates/Snippets/sam.service.httpapi.definitionbody.yaml";
-                var pathSnippet = PathSnippet ?? "AwsTemplates/Snippets/sam.service.httpapi.path.yaml";
+                var template = Template;   
 
                 var cognitoResource = directive.Authentication;
 
                 // Read snippets and generate
                 var templateBuilder = new StringBuilder();
-                templateBuilder.Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, template)));
-                templateBuilder.Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, definitionBodySnippet)));
-                var pathTemplate = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, pathSnippet));
-               
-                templateBuilder.Replace("__ApiGatewayName__", resourceName);  
-                if(!string.IsNullOrEmpty(cognitoResource))
-                    templateBuilder.Replace("__CognitoResource__", cognitoResource);
+                templateBuilder
+                    .Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, template)))
+                    .Replace("__TemplateSource__", template);
 
-                var lambdaArtifacts = solution.Directives.GetArtifactsByTypeName(directive.Containers, "DotNetLambda");
+                var definitionBody = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, DefinitionBodySnippet))
+                    .Replace("__TemplateSource__", DefinitionBodySnippet);
+                templateBuilder.Append(definitionBody);
+
+                var pathTemplate = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, PathSnippet))
+                    .Replace("__TemplateSource__", PathSnippet);
+
+                templateBuilder.Replace("__ResourceGenerator__", this.GetType().Name);
+                templateBuilder.Replace("__ApiGatewayName__", resourceName);
+
+                var cognitoAuth = "";
+                if(!string.IsNullOrEmpty(cognitoResource))
+                {
+                    cognitoAuth = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CognitoAuthSnippet))
+                        .Replace("__CognitoResource__", cognitoResource);
+                }
+                templateBuilder.Replace("#CognitoAuth#", cognitoAuth);
+
+                var lambdaArtifacts = solution.Directives.GetArtifactsByType<DotNetApiLambdaProject>(directive.Containers);
 
                 // Generate Paths and insert into template
                 foreach(var lambdaArtifact in lambdaArtifacts)
@@ -73,8 +87,8 @@ namespace LazyMagic
                     }
                 }
 
+
                 //Exports 
-                ExportedName = resourceName;
                 ExportedAwsResourceName = resourceName;    
                 ExportedAwsResourceDefinition = templateBuilder.ToString();
                 ExportedPrefix = apiPrefix;

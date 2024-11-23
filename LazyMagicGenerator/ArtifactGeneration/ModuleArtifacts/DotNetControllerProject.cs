@@ -21,6 +21,9 @@ namespace LazyMagic
     {
         #region Properties
         public override string ProjectFilePath => ExportedProjectPath;
+        public override string Template { get; set; } = "ProjectTemplates/Controller";
+        public override string OutputFolder { get; set; } = "Modules";
+
         public string ExportedOpenApiSpec { get; set; } = "";    
 
         #endregion
@@ -107,7 +110,6 @@ namespace LazyMagic
                 var exportedOpenApiSpec = Path.Combine(OutputFolder, projectName, "openapi.g.yaml");
                 File.WriteAllText(Path.Combine(solution.SolutionRootFolderPath, exportedOpenApiSpec), openApiSpec);
 
-                ExportedName = projectName;
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName) + ".csproj";
                 ExportedServiceRegistrations = new List<string> { $"Add{projectName}" };
                 ExportedGlobalUsings = GlobalUsings.Distinct().ToList();
@@ -131,13 +133,13 @@ namespace LazyMagic
             foreach(var schemaKVP in schemas)
             {
                 if (remainingEntities.Count == 0) break;
-                foreach(var artifact in schemaKVP.Value.Artifacts)
+                foreach(var artifact in schemaKVP.Value.Artifacts.Values)
                 {
                     if(remainingEntities.Count == 0) break;
-                    if (artifact.Value.Type.Equals("DotNetRepo"))
+                    if (artifact is DotNetRepoProject)
                     {
                         if(remainingEntities.Count == 0) break;
-                        var dotNetRepoProject = artifact.Value as DotNetRepoProject;
+                        var dotNetRepoProject = artifact as DotNetRepoProject;
                         if (dotNetRepoProject.ExportedEntities.Any(e => remainingEntities.Contains(e)))
                         {
                             result.Add(schemaKVP.Key);
