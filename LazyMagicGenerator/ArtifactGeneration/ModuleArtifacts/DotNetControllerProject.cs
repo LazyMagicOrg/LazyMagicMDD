@@ -44,7 +44,7 @@ namespace LazyMagic
 
                 //  Get artifact dependencies
                 var interfaces = new List<string>() { $"I{projectName}Authorization" };
-                var dependantRepoArtifacts = solution.Directives.GetArtifactsByTypeName(schemas, "DotNetRepo");
+                var dependantRepoArtifacts = solution.Directives.GetArtifactsByType<DotNetRepoProject>(schemas);
                 foreach (var dotNetRepoArtifact in dependantRepoArtifacts)
                 {
                     var dotNetRepoProject = dotNetRepoArtifact as DotNetRepoProject;
