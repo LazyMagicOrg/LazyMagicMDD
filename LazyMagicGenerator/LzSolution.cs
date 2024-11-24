@@ -41,13 +41,14 @@ namespace LazyMagic
         }
         #endregion
 
-       
-        private async Task LoadDirectivesFileAsync()
+
+        public async Task LoadDirectivesFileAsync(string lazyMagicFile = "LazyMagic.yaml")
         {
+            if (string.IsNullOrEmpty(lazyMagicFile)) lazyMagicFile = "LazyMagic.yaml";
             try
             {
                 await LzLogger.InfoAsync("Parsing Directives file");
-                var yaml = File.ReadAllText(Path.Combine(SolutionRootFolderPath, "LazyMagic.yaml"));
+                var yaml = File.ReadAllText(Path.Combine(SolutionRootFolderPath, lazyMagicFile));
                 using (var reader = new StringReader(yaml))
                 {
                     string yamlContent = reader.ReadToEnd();
@@ -80,7 +81,7 @@ namespace LazyMagic
             #endregion
 
         }
-        private async Task LoadAggregateSchemas()
+        public async Task LoadAggregateSchemas()
         {
             var schemaDirectives = Directives.Select(d => d.Value).Where(d => d is Schema).ToList();
             var openApiSpecs = schemaDirectives.SelectMany(d => (d as Schema).OpenApiSpecs).ToList();
