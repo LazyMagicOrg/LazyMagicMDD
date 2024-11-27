@@ -21,20 +21,18 @@ namespace LazyMagic
     {
         public static string GetCsprojFile(string projectDir)
         {
-            var csprojFiles = Directory.GetFiles(projectDir, "*.csproj").Select(path => Path.GetFileName(path)).ToList();
-
-            if (csprojFiles.Count > 1)
-                throw new Exception($"Error, multiple csproj files found");
-
-            if (csprojFiles.Count == 0)
-                throw new Exception($"Error, no csproj file found");
-
-            return csprojFiles[0];
+            var csprojFiles = Directory.GetFiles(projectDir, "*.csproj");
+            var fileCount = csprojFiles.Length;
+            if (fileCount > 1)
+                throw new Exception("Error, multiple csproj files found");
+            if (fileCount == 0)
+                throw new Exception("Error, no csproj file found");
+            return Path.GetFileName(csprojFiles[0]);
         }
 
         public static void CopyProject(string sourcePath, string destinationPath, List<string> filesToExclude)
         {
-            List<Glob> globs = filesToExclude.Select(x => Glob.Parse(x)).ToList();
+            var globs = filesToExclude.Select(x => Glob.Parse(x));
             try
             {
                 if (string.IsNullOrEmpty(sourcePath))

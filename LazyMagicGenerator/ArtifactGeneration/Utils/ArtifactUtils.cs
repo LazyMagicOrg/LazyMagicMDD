@@ -14,7 +14,6 @@ namespace LazyMagic
                     ?? throw new Exception($"Directive '{key}' found but directive is not of type {typeof(T).Name}")
                 : throw new Exception($"Directive '{key}' not found in directives"));
         }
-
         public static List<string> GetModulesForApi(Api api, Directives directives)
         {
             return api.Containers

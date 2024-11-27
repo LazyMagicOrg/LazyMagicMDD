@@ -112,7 +112,7 @@ namespace LazyMagic
 
                 /* INSERT CONFIG FUNCTION */
                 var configJson = new StringBuilder();
-                var apiDirectives = directive.Apis.Select(x => solution.Directives[x].Cast<Api>()).ToList().Distinct().ToList();
+                var apiDirectives = directive.Apis.Select(x => solution.Directives[x].Cast<Api>()).Distinct();
                 foreach (var apiDirective in apiDirectives)
                 {
                     if (string.IsNullOrEmpty(apiDirective.Authentication)) continue; // No authentication 
@@ -180,16 +180,14 @@ namespace LazyMagic
 
             return apiResources.Distinct().ToList();
         }
-        private List<AwsCognitoResource> GetAwsCognitoResources(SolutionBase solution, Service directive)
-        {
-            var cognitoResources = new List<AwsCognitoResource>();
-            foreach (var api in directive.Apis.Select(x => solution.Directives[x].Cast<Api>()).ToList())
-                if (api.Authentication != null)
-                    cognitoResources.Add((AwsCognitoResource)solution.Directives[api.Authentication].Artifacts.Values.First());    
-            
-            return cognitoResources.Distinct().ToList();
-        }
-       
+        private List<AwsCognitoResource> GetAwsCognitoResources(SolutionBase solution, Service directive) =>
+           directive.Apis
+               .Select(x => solution.Directives[x].Cast<Api>())
+               .Where(api => api.Authentication != null)
+               .Select(api => (AwsCognitoResource)solution.Directives[api.Authentication].Artifacts.Values.First())
+               .Distinct()
+               .ToList();
+
 
     }
 }

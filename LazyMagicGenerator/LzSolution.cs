@@ -92,10 +92,14 @@ namespace LazyMagic
         }
         private async Task LoadAggregateSchemas()
         {
-            var schemaDirectives = Directives.Select(d => d.Value).Where(d => d is Schema).ToList();
-            var openApiSpecs = schemaDirectives.SelectMany(d => (d as Schema).OpenApiSpecs).ToList();
-            openApiSpecs = openApiSpecs.Distinct().ToList();
-            AggregateSchemas = await LoadOpenApiFilesAsync(SolutionRootFolderPath, openApiSpecs);
+            AggregateSchemas = await LoadOpenApiFilesAsync(
+                SolutionRootFolderPath,
+                Directives.Values
+                    .OfType<Schema>()
+                    .SelectMany(s => s.OpenApiSpecs)
+                    .Distinct()
+                    .ToList()
+            );
         }
 
     }

@@ -190,7 +190,7 @@ namespace LazyMagic
             //if (solutionModel.DoNotGenerateSchema.Contains(className))
             //    continue;
             var classFileContent = _template.Replace("__NameSpace__", $"{nameSpace}");
-            foreach (var classBody in classDeclaration.ToList())
+            foreach (var classBody in classDeclaration)
             {
                 classCode += HasPublicIdProperty(classBody)
                     ? AddInterfaceToClass(classBody, "IItem").ToString()
@@ -223,7 +223,7 @@ public partial class " + className + @"Validator : FluentValidation.AbstractVali
             //if (solutionModel.DoNotGenerateSchema.Contains(className))
             //    continue;
             var classFileContent = _template.Replace("__NameSpace__", $"{nameSpace}");
-            foreach (var classBody in enumDeclaration.ToList())
+            foreach (var classBody in enumDeclaration)
                 classCode += classBody.ToFullString();
             classFileContent = classFileContent.Replace("__Body__", classCode);
             File.WriteAllText(filePath, ReplaceLineEndings(classFileContent));

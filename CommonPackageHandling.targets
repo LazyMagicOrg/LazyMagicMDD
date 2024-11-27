@@ -10,7 +10,6 @@
 		<RepositoryType>GitHub</RepositoryType>
 		<Company>Insight Sciences Corporation</Company>
 		<Authors>Tim May, Thomas May</Authors>
-		<Version>0.93.0</Version>
 		<SignAssembly>false</SignAssembly>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<IncludeSymbols>true</IncludeSymbols>

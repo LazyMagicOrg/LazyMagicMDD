@@ -19,8 +19,12 @@ namespace LazyMagic
         public Directives()
         {
         }
-        private void AssignDefaults() =>
-           Keys.ToList().ForEach(key => this[key].AssignDefaults(this));
+        private void AssignDefaults()
+        {
+            // ToList required because we are updating keys
+            foreach (var key in Keys.ToList())
+                this[key].AssignDefaults(this);
+        }
         public void Validate()
         {
             AssignDefaults();
