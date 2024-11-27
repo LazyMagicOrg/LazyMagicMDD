@@ -275,13 +275,11 @@ Display-OutputDictionary -Dictionary ${appName}StackOutputDict -Title ""storeapp
             }   
         }
 
-        public List<WebApp> GetWebApps(SolutionBase solution, Tenancy directive)
-        {
-            var webApps = new List<WebApp>();
-            foreach(var webAppDirective in directive.WebApps.Select(x => solution.Directives[x].Cast<WebApp>()).ToList())
-                webApps.Add(webAppDirective);   
-            return webApps.Distinct().ToList(); 
-        }
+        public List<WebApp> GetWebApps(SolutionBase solution, Tenancy directive) =>
+           directive.WebApps
+               .Select(x => solution.Directives[x].Cast<WebApp>())
+               .Distinct()
+               .ToList();
 
         public List<string> GetWebAppNames(SolutionBase solution, Tenancy directive)
         {
@@ -296,7 +294,7 @@ Display-OutputDictionary -Dictionary ${appName}StackOutputDict -Title ""storeapp
             var apis = new List<Api>();
             var webApps = GetWebApps(solution, directive);  
             foreach(var webAppDirective in webApps)
-                foreach(var apiDirective in webAppDirective.Apis.Select(x => solution.Directives[x].Cast<Api>()).ToList())
+                foreach(var apiDirective in webAppDirective.Apis.Select(x => solution.Directives[x].Cast<Api>()))
                     apis.Add(apiDirective);
             return apis.Distinct().ToList(); 
         }
@@ -311,7 +309,7 @@ Display-OutputDictionary -Dictionary ${appName}StackOutputDict -Title ""storeapp
         {
             var authenticationNames = new List<string>();
             var apiNames = GetWebAppApiNames(solution, directive);
-            foreach (var apiDirective in apiNames.Select(x => solution.Directives[x].Cast<Api>()).ToList())
+            foreach (var apiDirective in apiNames.Select(x => solution.Directives[x].Cast<Api>()))
                 authenticationNames.Add(apiDirective.Authentication);
             return authenticationNames.Distinct().ToList(); 
         }

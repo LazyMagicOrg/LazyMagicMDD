@@ -95,6 +95,7 @@ namespace LazyMagic
                 OpenApiDocument openApiDocument = await ParseOpenApiYamlContent(openApiSpec);
                 // Add the apiPrefix to each path 
                 var paths = openApiDocument.Paths;
+                // ToList() is necessary here because we are modifying Paths
                 foreach (var path in openApiDocument.Paths.Keys.ToList())
                 {
                     var value = openApiDocument.Paths[path];
