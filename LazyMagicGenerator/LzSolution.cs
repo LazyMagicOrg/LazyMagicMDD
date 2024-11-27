@@ -22,10 +22,13 @@ namespace LazyMagic
     /// </summary>
     public class LzSolution : SolutionBase
     {
+        private string DirectiveFilePath { get; }
+
         public LzSolution(ILogger logger, string solutionRootFolderPath)
         {
             LzLogger.SetLogger(logger);
             SolutionRootFolderPath = solutionRootFolderPath;
+            DirectiveFilePath = File.ReadAllText(Path.Combine(solutionRootFolderPath, "LazyMagic.yaml"));
         }
 
         #region Public Methods
@@ -39,20 +42,26 @@ namespace LazyMagic
             await Directives.ProcessAsync(this); // Processes the Directives
             await LzLogger.InfoAsync("done");
         }
+
+        public async Task TestDirectiveValidation(string directiveFilePath)
+        {
+            await LoadDirectivesFileAsync(directiveFilePath); // Reads the Directives from the LazyMagic.yaml file
+            Directives.Validate(); // Appies defaults and validates the resulting Directives
+        }
         #endregion
 
-
-        public async Task LoadDirectivesFileAsync(string lazyMagicFile = "LazyMagic.yaml")
+        private async Task LoadDirectivesFileAsync(string directiveFilePath = null)
         {
-            if (string.IsNullOrEmpty(lazyMagicFile)) lazyMagicFile = "LazyMagic.yaml";
+            directiveFilePath = directiveFilePath ?? DirectiveFilePath; //set default
+            
             try
             {
                 await LzLogger.InfoAsync("Parsing Directives file");
-                var yaml = File.ReadAllText(Path.Combine(SolutionRootFolderPath, lazyMagicFile));
+                var yaml = File.ReadAllText(directiveFilePath);
                 using (var reader = new StringReader(yaml))
                 {
                     string yamlContent = reader.ReadToEnd();
-                    var deserializer = new DeserializerBuilder()
+                    var deserializer = new DeserializerBuilder() 
                            .WithTypeConverter(new DirectivesPropertyConverter())
                            .WithTypeConverter(new DirectivePropertyConverter())
                            .WithTypeConverter(new ArtifactsPropertyConverter())
@@ -81,7 +90,7 @@ namespace LazyMagic
             #endregion
 
         }
-        public async Task LoadAggregateSchemas()
+        private async Task LoadAggregateSchemas()
         {
             var schemaDirectives = Directives.Select(d => d.Value).Where(d => d is Schema).ToList();
             var openApiSpecs = schemaDirectives.SelectMany(d => (d as Schema).OpenApiSpecs).ToList();
