@@ -28,7 +28,7 @@ namespace LazyMagic
         {
             LzLogger.SetLogger(logger);
             SolutionRootFolderPath = solutionRootFolderPath;
-            DirectiveFilePath = File.ReadAllText(Path.Combine(solutionRootFolderPath, "LazyMagic.yaml"));
+            DirectiveFilePath = Path.Combine(solutionRootFolderPath, "LazyMagic.yaml");
         }
 
         #region Public Methods
