@@ -28,9 +28,9 @@ namespace LazyMagic
         public void Validate()
         {
             AssignDefaults();
-            foreach (var key in this)
+            foreach (var key in this.Keys)
             {
-                key.Value.Validate(this);
+                this[key].Validate(this);
             }
         }
         public async Task ProcessAsync(SolutionBase solution)

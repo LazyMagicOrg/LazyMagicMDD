@@ -26,21 +26,25 @@ namespace TestDirectiveValidation
         }
 
         [Fact]
-        /*our naming convention has led to some awkward variable names in this case. Be not confused. The configuration file which acts as the 
-         single source of truth from which lazy magic generates is called the DIRECTIVE FILE. Here we test the vailidity of the DIRECTIVE FILE
-         by running the validate() method in each artifcat class contained therin. The sample directive files wich will throw errors are things like 
-         TestFile1.yaml or TestFile2.yaml. Which is why we need a DIRECITVE file, filePath.
-
-         Although contianing many directives, we use the singular DIRECTIVE throughout. 
-         */
-        public async Task TestDirectiveValidationAsync()
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /* The DIRECTIVE FILE is a configuration file which acts as the single source of truth
+         * Although contianing many directives, we use the singular DIRECTIVE throughout. 
+         * 
+         * each artifcat knows how to validate() its reference in a  DIRECTIVE FILE
+        
+         * we use sample directive files like TestFile1.yaml or TestFile2.yaml to throw instructive erros */
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+    
+        public async Task RequiredReference_ContainerToModule_Async()
         {
-            string directiveFileFilePath = Path.Combine(testPath, "TestFile1.yaml");
+            //test only validates first child requirment
 
-            await Assert.ThrowsAsync<Exception>(async () =>
+            string testFilePath = Path.Combine(testPath, "TestFile1.yaml");
+
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
             {
-                await new LzSolution(testLogger, basePath).TestDirectiveValidation(directiveFileFilePath);
-                throw new Exception($"Sample error message: {directiveFileFilePath}");
+                Console.WriteLine("run");
+                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
             });
         }
     }
