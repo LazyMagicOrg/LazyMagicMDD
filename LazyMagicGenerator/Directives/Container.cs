@@ -3,7 +3,7 @@ using Microsoft.CodeAnalysis.VisualBasic.Syntax;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-//using System.Linq;
+using System.Linq;
 
 
 namespace LazyMagic
@@ -22,7 +22,7 @@ namespace LazyMagic
 
         public override void Validate(Directives directives)
         {
-            ContainerValidator.Validate(this, directives);
+            ContainerValidator.Validate2(this, directives);
         }
     }
 
@@ -38,17 +38,17 @@ namespace LazyMagic
                     throw new ArgumentException($"Module referenced by Container Key:{container.Key} not found in Directives file");
             }
         }
-        //public static void Validate2(Container container, Directives directives)
-        //{
-        //    var missingModules = container.Modules
-        //        .Where(module => !directives.ContainsKey(module))
-        //        .ToList();
+        public static void Validate2(Container container, Directives directives)
+        {
+            var missingModules = container.Modules
+                .Where(module => !directives.ContainsKey(module))
+                .ToList();
 
-        //    if (missingModules.Any())
-        //    {
-        //        throw new ArgumentException(
-        //            $"Directive File Validator Error: Container: {container.Key} references missing modules: {string.Join(", ", missingModules)}");
-        //    }
-        //}
+            if (missingModules.Any())
+            {
+                throw new ArgumentException(
+                    $"Directive File Validator Error: Container: {container.Key} references missing module(s): {string.Join(", ", missingModules)}");
+            }
+        }
     }
 }

@@ -37,15 +37,16 @@ namespace TestDirectiveValidation
     
         public async Task RequiredReference_ContainerToModule_Async()
         {
-            //test only validates first child requirment
+            //test only checks for first child
 
             string testFilePath = Path.Combine(testPath, "TestFile1.yaml");
 
-            await Assert.ThrowsAsync<ArgumentException>(async () =>
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             {
                 Console.WriteLine("run");
                 await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
             });
+            Console.WriteLine(exception.Message);
         }
     }
 }
