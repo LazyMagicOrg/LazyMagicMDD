@@ -1,6 +1,7 @@
 using LazyMagic;
 using NJsonSchema.Validation;
 using System.Security.Cryptography.X509Certificates;
+using Xunit.Abstractions;
 
 namespace TestDirectiveValidation
 {
@@ -14,18 +15,20 @@ namespace TestDirectiveValidation
 
     public class DirectiveValidation
     {
+        private readonly ITestOutputHelper xUnitLogger;
         public ILogger testLogger { get; set; }
         string basePath;
         string testPath;
 
-        public DirectiveValidation()
+        public DirectiveValidation(ITestOutputHelper xUnitLogger)
         {
+            this.xUnitLogger = xUnitLogger;
             testLogger = new TestLogger();
             basePath = Directory.GetParent(AppContext.BaseDirectory)?.Parent?.Parent?.Parent?.Parent?.FullName;
             testPath = Path.Combine(basePath, "TestDirectiveValidation", "DirectiveFiles");
         }
 
-        [Fact]
+
         ////////////////////////////////////////////////////////////////////////////////////////////////////
         /* The DIRECTIVE FILE is a configuration file which acts as the single source of truth
          * Although contianing many directives, we use the singular DIRECTIVE throughout. 
@@ -34,19 +37,46 @@ namespace TestDirectiveValidation
         
          * we use sample directive files like TestFile1.yaml or TestFile2.yaml to throw instructive erros */
         ////////////////////////////////////////////////////////////////////////////////////////////////////
-    
-        public async Task RequiredReference_ContainerToModule_Async()
+
+        //Container_Missing_1_Ref_StoreLambda_StoreModule.yaml
+        [Fact]
+        public async Task MissingReference_Container_Module_Singular_Async()
         {
             //test only checks for first child
-
-            string testFilePath = Path.Combine(testPath, "TestFile1.yaml");
+            string testFilePath = Path.Combine(
+                testPath, 
+                "testfile1.yaml"
+                );
+            
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            {
+                Console.WriteLine("run");
+                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
+            });
+            
+            Assert.Contains("StoreLambda", exception.Message);
+            Assert.Contains("StoreModule", exception.Message);
+            xUnitLogger.WriteLine(exception.Message);
+        }
+        [Fact]
+        public async Task MissingReference_Container_Module_Multiple_Async()
+        {
+            //test only checks for first child
+            string testFilePath = Path.Combine(
+                testPath,
+                "testfile2.yaml"
+                );
 
             ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             {
                 Console.WriteLine("run");
                 await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
             });
-            Console.WriteLine(exception.Message);
+
+            Assert.Contains("StoreLambda", exception.Message);
+            Assert.Contains("StoreModule", exception.Message);
+            Assert.Contains("LzMessagingModule", exception.Message);
+            xUnitLogger.WriteLine(exception.Message);
         }
     }
 }

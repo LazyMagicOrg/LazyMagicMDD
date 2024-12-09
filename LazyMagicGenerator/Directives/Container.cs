@@ -22,23 +22,13 @@ namespace LazyMagic
 
         public override void Validate(Directives directives)
         {
-            ContainerValidator.Validate2(this, directives);
+            ContainerValidator.Validate(this, directives);
         }
     }
 
     public class ContainerValidator : AbstractValidator<Container>
     {
-        
         public static void Validate(Container container, Directives directives)
-        {
-
-            foreach (string module in container.Modules)
-            {
-                if(!directives.ContainsKey(module))
-                    throw new ArgumentException($"Module referenced by Container Key:{container.Key} not found in Directives file");
-            }
-        }
-        public static void Validate2(Container container, Directives directives)
         {
             var missingModules = container.Modules
                 .Where(module => !directives.ContainsKey(module))
