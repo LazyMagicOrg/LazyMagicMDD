@@ -78,5 +78,25 @@ namespace TestDirectiveValidation
             Assert.Contains("LzMessagingModule", exception.Message);
             xUnitLogger.WriteLine(exception.Message);
         }
+        [Fact]
+        public async Task MissingReference_Api_Container_Single_Async()
+        {
+            //test only checks for first child
+            //Needs DefaultApi?
+            string testFilePath = Path.Combine(
+                testPath,
+                "testfile3.yaml"
+                );
+
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            {
+                Console.WriteLine("run");
+                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
+            });
+
+            Assert.Contains("LzMessagingApi", exception.Message);
+            Assert.Contains("LzMessagingWebSocketLambda", exception.Message);
+            xUnitLogger.WriteLine(exception.Message);
+        }
     }
 }

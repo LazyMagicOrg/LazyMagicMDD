@@ -24,16 +24,24 @@ namespace LazyMagic
 
         public override void Validate(Directives directives)
         {
-            base.Validate(directives);
+            ApiValidator.Validate(this, directives);
         }
 
 
     }
     public class ApiValidator : AbstractValidator<Api>
     {
-        public ApiValidator()
+        public static void Validate(Api api, Directives directives)
         {
+            var missingContainers = api.Containers
+                .Where(container => !directives.ContainsKey(container))
+                .ToList();
 
+            if (missingContainers.Any())
+            {
+                throw new ArgumentException(
+                    $"Directive File Validator Error: Api: {api.Key} references missing containers: {string.Join(", ", missingContainers)}");
+            }
         }
     }
 }
