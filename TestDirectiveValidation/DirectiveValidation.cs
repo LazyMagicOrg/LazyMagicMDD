@@ -98,5 +98,45 @@ namespace TestDirectiveValidation
             Assert.Contains("LzMessagingWebSocketLambda", exception.Message);
             xUnitLogger.WriteLine(exception.Message);
         }
+        //--- NEW TESTS ---//
+        [Fact]
+        public async Task MissingReference_Service_Api_Async()
+        {
+            string testFilePath = Path.Combine(
+                testPath,
+                "testfileA.yaml"
+                );
+
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            {
+                Console.WriteLine("run");
+                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
+            });
+
+            Assert.Contains("Service", exception.Message);     //what
+            Assert.Contains("StoreApi", exception.Message);    //what it's missing
+            Assert.Contains("ConsumerApi", exception.Message); //what it's missing
+            xUnitLogger.WriteLine(exception.Message);
+        }
+        [Fact]
+        public async Task MissingReference_Webapp_Api_Async()
+        {
+            string testFilePath = Path.Combine(
+                testPath,
+                "testfileB.yaml"
+                );
+
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            {
+                Console.WriteLine("run");
+                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
+            });
+
+            Assert.Contains("AdminApp", exception.Message);     //what
+            Assert.Contains("StoreApi", exception.Message);    //what it's missing
+            Assert.Contains("AdminApp", exception.Message);    //what it's missing
+            xUnitLogger.WriteLine(exception.Message);
+        }
+
     }
 }

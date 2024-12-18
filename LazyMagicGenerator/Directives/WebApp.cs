@@ -1,6 +1,7 @@
 ﻿using FluentValidation;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace LazyMagic
@@ -16,14 +17,22 @@ namespace LazyMagic
         public override void AssignDefaults(Directives directives) => AssignDefaults(directives, this.GetType());
         public override void Validate(Directives directives)
         {
-            base.Validate(directives);
+            WebAppValidator.Validate(this, directives);
         }
     }
     public class WebAppValidator : AbstractValidator<WebApp>
     {
-        public WebAppValidator()
+        public static void Validate(WebApp webapp, Directives directives)
         {
+            var missingApis = webapp.Apis
+                .Where(api => !directives.ContainsKey(api))
+                .ToList();
 
+            if (missingApis.Any())
+            {
+                throw new ArgumentException(
+                    $"Directive File Validator Error: WebApp: {webapp.Key} references missing api(s): {string.Join(", ", missingApis)}");
+            }
         }
     }
 }

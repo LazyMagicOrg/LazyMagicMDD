@@ -1,5 +1,7 @@
 ﻿using FluentValidation;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace LazyMagic
@@ -18,15 +20,23 @@ namespace LazyMagic
 
         public override void Validate(Directives directives)
         {
-            base.Validate(directives);
+            ServiceValidator.Validate(this, directives);
         }
     }
 
     public class ServiceValidator : AbstractValidator<Service>
     {
-        public ServiceValidator()
+        public static void Validate(Service service, Directives directives)
         {
+            var missingApis = service.Apis
+                .Where(api => !directives.ContainsKey(api))
+                .ToList();
 
+            if (missingApis.Any())
+            {
+                throw new ArgumentException(
+                    $"Directive File Validator Error: Service: {service.Key} references missing api(s): {string.Join(", ", missingApis)}");
+            }
         }
     }
 
