@@ -23,7 +23,7 @@ Directives:
       DotNetHttpApiSDKProject: 
   
   WebAppDefault:
-    Type: WebApp # this directive may be referenced by other WebApp directives
+    Type: WebApp
     IsDefault: true
 
   # MODULES
@@ -88,16 +88,6 @@ Directives:
     Defaults: ApiDefault
     Containers:
     - PublicLambda
-
-  # # SERVICE
-  # Service:
-  #   Type: Service
-  #   Apis:
-  #   - StoreApi
-  #   - ConsumerApi
-  #   - PublicApi
-  #   Artifacts:
-  #     AwsServiceStackTemplate:
 
 # WEBAPPS
   AdminApp:

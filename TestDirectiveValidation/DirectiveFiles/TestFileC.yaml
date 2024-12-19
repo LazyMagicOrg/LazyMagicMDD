@@ -1,0 +1,51 @@
+LazyMagicDirectivesVersion: 2.0.0
+
+Directives:
+  # DEFAULTS
+  ModuleDefault:
+    Type: Module
+    IsDefault: true 
+    Artifacts:
+      DotNetControllerProject: 
+
+  AwsApiLambdaContainerDefault:
+    Type: Container
+    IsDefault: true 
+    Artifacts:
+      DotNetApiLambdaProject:
+      AwsApiLambdaResource:
+
+  ApiDefault:
+    Type: Api
+    IsDefault: true 
+    Artifacts:
+      AwsHttpApiResource:
+      DotNetHttpApiSDKProject: 
+  
+  WebAppDefault:
+    Type: WebApp
+    IsDefault: true
+
+  # MODULES
+  StoreModule:
+    Type: Module
+    Defaults: ModuleDefault
+    OpenApiSpecs:
+    - openapi.store.yaml
+    - openapi.admin.yaml
+
+  # # CONTAINERS
+  # StoreLambda:
+  #   Type: Container
+  #   ApiPrefix: Store
+  #   Defaults: AwsApiLambdaContainerDefault
+  #   Modules:
+  #   - StoreModule
+
+  # APIS
+  StoreApi:
+    Type: Api
+    Defaults: ApiDefault
+    Authentication: EmployeeAuth
+    Containers:
+    - StoreLambda

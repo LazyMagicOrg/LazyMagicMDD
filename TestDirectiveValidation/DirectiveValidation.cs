@@ -38,67 +38,6 @@ namespace TestDirectiveValidation
          * we use sample directive files like TestFile1.yaml or TestFile2.yaml to throw instructive erros */
         ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        //Container_Missing_1_Ref_StoreLambda_StoreModule.yaml
-        [Fact]
-        public async Task MissingReference_Container_Module_Singular_Async()
-        {
-            //test only checks for first child
-            string testFilePath = Path.Combine(
-                testPath, 
-                "testfile1.yaml"
-                );
-            
-            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
-            {
-                Console.WriteLine("run");
-                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
-            });
-            
-            Assert.Contains("StoreLambda", exception.Message);
-            Assert.Contains("StoreModule", exception.Message);
-            xUnitLogger.WriteLine(exception.Message);
-        }
-        [Fact]
-        public async Task MissingReference_Container_Module_Multiple_Async()
-        {
-            //test only checks for first child
-            string testFilePath = Path.Combine(
-                testPath,
-                "testfile2.yaml"
-                );
-
-            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
-            {
-                Console.WriteLine("run");
-                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
-            });
-
-            Assert.Contains("StoreLambda", exception.Message);
-            Assert.Contains("StoreModule", exception.Message);
-            Assert.Contains("LzMessagingModule", exception.Message);
-            xUnitLogger.WriteLine(exception.Message);
-        }
-        [Fact]
-        public async Task MissingReference_Api_Container_Single_Async()
-        {
-            //test only checks for first child
-            //Needs DefaultApi?
-            string testFilePath = Path.Combine(
-                testPath,
-                "testfile3.yaml"
-                );
-
-            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
-            {
-                Console.WriteLine("run");
-                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
-            });
-
-            Assert.Contains("LzMessagingApi", exception.Message);
-            Assert.Contains("LzMessagingWebSocketLambda", exception.Message);
-            xUnitLogger.WriteLine(exception.Message);
-        }
-        //--- NEW TESTS ---//
         [Fact]
         public async Task MissingReference_Service_Api_Async()
         {
@@ -132,11 +71,46 @@ namespace TestDirectiveValidation
                 await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
             });
 
-            Assert.Contains("AdminApp", exception.Message);     //what
-            Assert.Contains("StoreApi", exception.Message);    //what it's missing
-            Assert.Contains("AdminApp", exception.Message);    //what it's missing
+            Assert.Contains("AdminApp", exception.Message);    //what
+            Assert.Contains("StoreApi", exception.Message);    //what's missing
+            Assert.Contains("AdminApp", exception.Message);    //what's missing
             xUnitLogger.WriteLine(exception.Message);
         }
+        [Fact]
+        public async Task MissingReference_Api_Container_Async()
+        {
+            string testFilePath = Path.Combine(
+                testPath,
+                "testfileC.yaml"
+                );
 
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            {
+                Console.WriteLine("run");
+                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
+            });
+
+            Assert.Contains("StoreApi",    exception.Message);  //what
+            Assert.Contains("StoreLambda", exception.Message);  //what it's missing
+            xUnitLogger.WriteLine(exception.Message);
+        }
+        [Fact]
+        public async Task MissingReference_Container_Module_Async()
+        {
+            string testFilePath = Path.Combine(
+                testPath,
+                "testfileD.yaml"
+                );
+
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            {
+                Console.WriteLine("run");
+                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
+            });
+
+            Assert.Contains("StoreLambda", exception.Message); //what
+            Assert.Contains("StoreModule", exception.Message); //whats missing
+            xUnitLogger.WriteLine(exception.Message);
+        }
     }
 }

@@ -22,10 +22,6 @@ Directives:
       AwsHttpApiResource:
       DotNetHttpApiSDKProject: 
 
-  # WebAppDefault:
-  #   Type: WebApp # this directive may be referenced by other WebApp directives
-  #   IsDefault: true
-
   # MODULES
   StoreModule:
     Type: Module
@@ -98,13 +94,3 @@ Directives:
     - PublicApi
     Artifacts:
       AwsServiceStackTemplate:
-
-# # WEBAPPS
-#   AdminApp:
-#     Type: WebApp
-#     Defaults: WebAppDefault
-#     Path: admin
-#     Apis:
-#     - StoreApi
-#     - ConsumerApi
-#     - PublicApi
