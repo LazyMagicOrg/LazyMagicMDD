@@ -46,7 +46,7 @@ namespace TestDirectiveValidation
                 "testfileA.yaml"
                 );
 
-            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            FluentValidation.ValidationException exception = await Assert.ThrowsAsync<FluentValidation.ValidationException>(async () =>
             {
                 Console.WriteLine("run");
                 await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
@@ -65,7 +65,7 @@ namespace TestDirectiveValidation
                 "testfileB.yaml"
                 );
 
-            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            FluentValidation.ValidationException exception = await Assert.ThrowsAsync<FluentValidation.ValidationException>(async () =>
             {
                 Console.WriteLine("run");
                 await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
@@ -102,7 +102,7 @@ namespace TestDirectiveValidation
                 "testfileD.yaml"
                 );
 
-            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            FluentValidation.ValidationException exception = await Assert.ThrowsAsync<FluentValidation.ValidationException>(async () =>
             {
                 Console.WriteLine("run");
                 await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);

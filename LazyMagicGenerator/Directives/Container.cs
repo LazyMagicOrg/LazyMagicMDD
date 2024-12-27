@@ -18,27 +18,28 @@ namespace LazyMagic
         public string ApiPrefix { get; set; }
         #endregion
 
-        public override void AssignDefaults(Directives directives) => AssignDefaults(directives, this.GetType());    
+        public override void AssignDefaults(Directives directives) => AssignDefaults(directives, this.GetType());
 
         public override void Validate(Directives directives)
         {
-            ContainerValidator.Validate(this, directives);
+            Container container = this;
+            ContainerValidator validator = new ContainerValidator(directives);
+            validator.ValidateAndThrow(container);
         }
     }
 
     public class ContainerValidator : AbstractValidator<Container>
     {
-        public static void Validate(Container container, Directives directives)
-        {
-            var missingModules = container.Modules
-                .Where(module => !directives.ContainsKey(module))
-                .ToList();
+        private readonly Directives _directives;
 
-            if (missingModules.Any())
-            {
-                throw new ArgumentException(
-                    $"Directive File Validator Error: Container: {container.Key} references missing module(s): {string.Join(", ", missingModules)}");
-            }
+        public ContainerValidator(Directives directives)
+        {
+            _directives = directives;
+
+            RuleFor(container => container.Modules)
+                .Must(modules => modules.All(module => _directives.ContainsKey(module)))
+                .WithMessage((container, modules) =>
+                    $"Container: {container.Key} references missing modules: {string.Join(", ", modules.Where(module => !_directives.ContainsKey(module)))}");
         }
     }
 }
