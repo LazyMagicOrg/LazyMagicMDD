@@ -144,10 +144,7 @@ namespace TestDirectiveValidation
                 Console.WriteLine("run");
                 await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
             });
-
-            //Assert.Contains("cow", exception.Message); //what
-            //Assert.Contains("cow", exception.Message); //whats missing
-            //Assert.Contains("cow", exception.Message); //whats missing
+            Assert.Contains("DotNetSchemaProject", exception.Message); //Unknown Artifact Type
             xUnitLogger.WriteLine(exception.Message);
         }
     }

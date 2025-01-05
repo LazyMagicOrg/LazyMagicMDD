@@ -13,9 +13,9 @@ namespace LazyMagic
         {
         }
 
-        public void Validate(Directives directives)
-        {
-        }
+        //public void Validate(Directives directives)
+        //{
+        //}
     }
 }
 

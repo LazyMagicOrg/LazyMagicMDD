@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using LazyMagicGenerator.Directives;
 using NSwag;
 using System;
 using System.Collections.Generic;
@@ -38,8 +39,10 @@ namespace LazyMagic
                 {
                     foreach (var artifact in artifacts.Values)
                     {
-                        var arttype = artifact.GetType();
-                        var foo = "foo";
+                        if (!(artifact is IModuleArtifact))
+                        {
+                            context.AddFailure($"Artifact {artifact.GetType().Name} is not a valid Module artifact. Module Artifacts must implement the IModuleArtifact marker interface");
+                        }
                     }
                 });
         }

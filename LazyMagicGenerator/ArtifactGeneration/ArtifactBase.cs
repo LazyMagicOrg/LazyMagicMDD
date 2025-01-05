@@ -16,10 +16,10 @@ namespace LazyMagic
             ;
         }
 
-        public virtual void Validate(ArtifactBase artifactBase)
-        {
-            ;
-        }
+        //public virtual void Validate(ArtifactBase artifactBase)
+        //{
+        //    ;
+        //}
 
         public async virtual Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {

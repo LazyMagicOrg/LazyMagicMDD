@@ -14,10 +14,11 @@ using static LazyMagic.OpenApiExtensions;
 using NSwag;
 using FluentValidation.Results;
 using System.Xml.Schema;
+using LazyMagicGenerator.Directives;
 
 namespace LazyMagic
 {
-    public class DotNetControllerProject : DotNetProjectBase
+    public class DotNetControllerProject : DotNetProjectBase, IModuleArtifact
     {
         #region Properties
         public override string ProjectFilePath => ExportedProjectPath;

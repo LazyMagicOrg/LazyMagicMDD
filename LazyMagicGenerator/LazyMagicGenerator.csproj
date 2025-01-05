@@ -25,6 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="ArtifactGeneration\IArtifact\" />
     <Folder Include="ArtifactGeneration\WebAppArtifacts\" />
   </ItemGroup>
 
