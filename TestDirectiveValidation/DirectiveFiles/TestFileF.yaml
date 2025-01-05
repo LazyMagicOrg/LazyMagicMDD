@@ -1,0 +1,96 @@
+LazyMagicDirectivesVersion: 2.0.0
+
+Directives:
+  # DEFAULTS
+  ModuleDefault:
+    Type: Module
+    IsDefault: true 
+    Artifacts:
+      DotNetControllerProject: 
+
+  AwsApiLambdaContainerDefault:
+    Type: Container
+    IsDefault: true 
+    Artifacts:
+      DotNetApiLambdaProject:
+      AwsApiLambdaResource:
+
+  ApiDefault:
+    Type: Api
+    IsDefault: true 
+    Artifacts:
+      AwsHttpApiResource:
+      DotNetHttpApiSDKProject: 
+
+  # MODULES
+  StoreModule:
+    Type: Module
+    Defaults: ModuleDefault
+    OpenApiSpecs:
+    - openapi.store.yaml
+    - openapi.admin.yaml
+
+  ConsumerModule:
+    Type: Module
+    Defaults: ModuleDefault
+    OpenApiSpecs:
+    - openapi.consumer.yaml
+
+  PublicModule:
+    Type: Module
+    Defaults: ModuleDefault
+    OpenApiSpecs:
+    - openapi.public.yaml
+
+  # CONTAINERS
+  StoreLambda:
+    Type: Container
+    ApiPrefix: Store
+    Defaults: AwsApiLambdaContainerDefault
+    Modules:
+    - StoreModule
+
+  ConsumerLambda:
+    Type: Container
+    ApiPrefix: Consumer
+    Defaults: AwsApiLambdaContainerDefault
+    Modules:
+    - ConsumerModule
+
+  PublicLambda:
+    Type: Container
+    ApiPrefix: Public
+    Defaults: AwsApiLambdaContainerDefault
+    Modules:
+    - PublicModule
+
+  # # APIS
+  # StoreApi:
+  #   Type: Api
+  #   Defaults: ApiDefault
+  #   Authentication: EmployeeAuth
+  #   Containers:
+  #   - StoreLambda
+
+  # ConsumerApi:
+  #   Type: Api
+  #   Defaults: ApiDefault
+  #   Authentication: ConsumerAuth
+  #   Containers:
+  #   - ConsumerLambda
+
+  PublicApi:
+    Type: Api
+    Defaults: ApiDefault
+    Containers:
+    - PublicLambda
+
+  # SERVICE
+  Service:
+    Type: Service
+    Apis:
+    - StoreApi
+    - ConsumerApi
+    - PublicApi
+    Artifacts:
+      AwsServiceStackTemplate:

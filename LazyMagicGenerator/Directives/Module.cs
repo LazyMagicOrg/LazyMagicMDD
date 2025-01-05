@@ -1,5 +1,6 @@
 ﻿using FluentValidation;
 using NSwag;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -18,13 +19,29 @@ namespace LazyMagic
         public override void AssignDefaults(Directives directives) => AssignDefaults(directives, this.GetType());
         public override void Validate(Directives directives)
         {
-            base.Validate(directives);
+            Module module = this;
+            ModuleValidator validator = new ModuleValidator(directives);
+            validator.ValidateAndThrow(module);
         }
     }
     public class ModuleValidator : AbstractValidator<Module>
     {
-        public ModuleValidator()
+        private readonly Directives _directives;
+
+        public ModuleValidator(Directives directives)
         {
+            _directives = directives;
+
+            //Validate Artifacts
+            RuleFor(module => module.Artifacts)
+                .Custom((artifacts, context) =>
+                {
+                    foreach (var artifact in artifacts.Values)
+                    {
+                        var arttype = artifact.GetType();
+                        var foo = "foo";
+                    }
+                });
         }
     }
 }

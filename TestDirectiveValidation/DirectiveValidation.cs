@@ -39,7 +39,7 @@ namespace TestDirectiveValidation
         ////////////////////////////////////////////////////////////////////////////////////////////////////
 
         [Fact]
-        public async Task MissingReference_Service_Api_Async()
+        public async Task Ref_Directive_Missing_Service_Api_Async()
         {
             string testFilePath = Path.Combine(
                 testPath,
@@ -58,7 +58,7 @@ namespace TestDirectiveValidation
             xUnitLogger.WriteLine(exception.Message);
         }
         [Fact]
-        public async Task MissingReference_Webapp_Api_Async()
+        public async Task Ref_Directive_Missing_Webapp_Api_Async()
         {
             string testFilePath = Path.Combine(
                 testPath,
@@ -77,7 +77,7 @@ namespace TestDirectiveValidation
             xUnitLogger.WriteLine(exception.Message);
         }
         [Fact]
-        public async Task MissingReference_Api_Container_Async()
+        public async Task Ref_Directive_Missing_Api_Container_Async()
         {
             string testFilePath = Path.Combine(
                 testPath,
@@ -95,7 +95,7 @@ namespace TestDirectiveValidation
             xUnitLogger.WriteLine(exception.Message);
         }
         [Fact]
-        public async Task MissingReference_Container_Module_Async()
+        public async Task Ref_Directive_Missing_Container_Module_Async()
         {
             string testFilePath = Path.Combine(
                 testPath,
@@ -113,7 +113,7 @@ namespace TestDirectiveValidation
             xUnitLogger.WriteLine(exception.Message);
         }
         [Fact]
-        public async Task MissingReference_Tenancy_WebApp_Async()
+        public async Task Ref_Directive_Missing_Tenancy_WebApp_Async()
         {
             string testFilePath = Path.Combine(
                 testPath,
@@ -129,6 +129,25 @@ namespace TestDirectiveValidation
             Assert.Contains("SystemTenancy", exception.Message); //what
             Assert.Contains("StoreApp", exception.Message); //whats missing
             Assert.Contains("ConsumerApp", exception.Message); //whats missing
+            xUnitLogger.WriteLine(exception.Message);
+        }
+        [Fact]
+        public async Task Ref_Artifact_Unknown_Service_Async()
+        {
+            string testFilePath = Path.Combine(
+                testPath,
+                "testfileF.yaml"
+                );
+
+            FluentValidation.ValidationException exception = await Assert.ThrowsAsync<FluentValidation.ValidationException>(async () =>
+            {
+                Console.WriteLine("run");
+                await new LzSolution(testLogger, basePath).TestDirectiveValidation(testFilePath);
+            });
+
+            //Assert.Contains("cow", exception.Message); //what
+            //Assert.Contains("cow", exception.Message); //whats missing
+            //Assert.Contains("cow", exception.Message); //whats missing
             xUnitLogger.WriteLine(exception.Message);
         }
     }

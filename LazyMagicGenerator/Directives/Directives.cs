@@ -30,7 +30,7 @@ namespace LazyMagic
             AssignDefaults();
             foreach (var key in this.Keys)
             {
-               this[key].Validate(this);
+                this[key].Validate(this);
             }
         }
         public async Task ProcessAsync(SolutionBase solution)
