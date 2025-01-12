@@ -14,9 +14,17 @@ namespace LazyMagic
     /// inclusion in an AWS SAM template. The resource is in 
     /// yaml format and available in the ExportedAwsResourceDefinition string property.
     /// </summary>
-    public class AwsWSApiLambdaResource : AwsApiLambdaResource
+    public class AwsWSApiLambdaResource : ArtifactBase
     {
         public override string Template { get; set; } = "AWSTemplates/Snippets/sam.service.messaging.wsapilambda.yaml";
+        public string ExportedContainerKey { get; set; } = null;
+        public string ExportedAwsResourceDefinition { get; set; } = "";
+        public string ExportedAwsResourceName { get; set; } = "";
+        public int MemorySize { get; set; } = 256;
+        public int Timeout { get; set; } = 30;
+        public string Tracing { get; set; } = "Active";
+        public string Runtime { get; set; } = "dotnet8";
+        public string DotNetTarget { get; set; } = "net8.0";
         public string CognitoPolicyTemplate { get; set; } = "AWSTemplates/Snippets/sam.service.messaging.wsapilambda.cognitopolicy.yaml";    
         public List<string> Authentications { get; set; } = new List<string>();
         public bool AuthenticationRequired { get; set; } = true;
@@ -25,7 +33,6 @@ namespace LazyMagic
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {
             var lambdaName = "";
-            string directiveKey = "";
             string errMsgPrefix = $"Error generating {GetType().Name}:";
             try
             {

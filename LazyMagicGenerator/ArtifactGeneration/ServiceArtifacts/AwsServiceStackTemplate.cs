@@ -5,7 +5,8 @@ using System.Linq;
 using System.Collections.Generic;
 using static LazyMagic.DotNetUtils;
 using static LazyMagic.LzLogger;
-using static LazyMagic.AwsServiceLambdasResources;
+using static LazyMagic.AwsServiceApiLambdasResources;
+using static LazyMagic.AwsServiceWSApiLambdasResources;
 using static LazyMagic.AwsSQSResources;
 using static LazyMagic.ArtifactUtils;
 using System.Text;
@@ -28,6 +29,7 @@ namespace LazyMagic
         public string  ConfigFunctionTemplate { get; set; } = "AWSTemplates/Snippets/sam.service.cloudfront.configfunction.yaml";
         public string LambdasTemplate { get; set; } = null;
         public string LambdaPermissionsTemplate { get; set; } = null;
+        public string MessagingWebSocketApi { get; set; } = null;
         
         // Exports
         public string ExportedStackTemplatePath { get; set; } = null;
@@ -38,7 +40,7 @@ namespace LazyMagic
             try
             {
                 Service directive = (Service)directiveArg;
-                var wsApi = directive.WSApi;
+                var wsApi = MessagingWebSocketApi ?? "";
 
                 // Set the service name
                
@@ -55,6 +57,7 @@ namespace LazyMagic
                     .Replace("__ResourceGenerator__", this.GetType().Name)
                     .Replace("__TemplateSource__", Template);
 
+                ///////////////////////////////////////////////////////////////////////////////////////
                 /* PARAMETERS */
                 var lzParametersBuilder = new StringBuilder();
                 lzParametersBuilder.AppendLine("#LzParameters start");
@@ -62,14 +65,17 @@ namespace LazyMagic
                 lzParametersBuilder.AppendLine("#LzParameters end");
                 templateBuilder.Replace("#LzParameters#", lzParametersBuilder.ToString());
 
+                ///////////////////////////////////////////////////////////////////////////////////////
                 /* LAMBDAS */
                 var lzLambdasBuilder = new StringBuilder();
                 lzLambdasBuilder.AppendLine("#LzLambdas start");
-                lzLambdasBuilder.Append(GenerateLambdaResources(solution, directive));
+                lzLambdasBuilder.Append(GenerateApiLambdaResources(solution, directive));
+                lzLambdasBuilder.Append(GenerateWSApiLambdaResources(solution, directive));
                 lzLambdasBuilder.AppendLine("#LzLambdas end");
                 templateBuilder.Replace("#LzLambdas#",lzLambdasBuilder.ToString());
 
-                /* HTTP APIs */
+                ///////////////////////////////////////////////////////////////////////////////////////
+                /* LZ APIs */
                 var apiTemplateBuilder = new StringBuilder();
                 apiTemplateBuilder.AppendLine("#LzApis start");
                 var apiResources = GetAwsApiResources(solution, directive);
@@ -83,34 +89,12 @@ namespace LazyMagic
                 }
                 apiTemplateBuilder.AppendLine("");
                 apiTemplateBuilder.AppendLine("#LzApis end");
+
                 templateBuilder.Replace("#LzApis#", apiTemplateBuilder.ToString());
 
-                /* AUTHENTICATORS */
-                var awsCognitoTemplateBuilder = new StringBuilder();
-                awsCognitoTemplateBuilder.AppendLine("#LzAuthenticators start");
-                var awsCognitoResources = GetAwsCognitoResources(solution, directive);
-                foreach (var cognitoResource in awsCognitoResources)
-                {
-                    awsCognitoTemplateBuilder.Append(cognitoResource.ExportedAwsResourceDefinition);
-                    ouptutsBuilder.Append($@"
-  {cognitoResource.ExportedAwsResourceName}UserPoolName:
-    Value: {cognitoResource.ExportedAwsResourceName}
-  {cognitoResource.ExportedAwsResourceName}UserPoolId:
-    Value: !Ref {cognitoResource.ExportedAwsResourceName}UserPool
-  {cognitoResource.ExportedAwsResourceName}UserPoolClientId:
-    Value: !Ref {cognitoResource.ExportedAwsResourceName}UserPoolClient
-  {cognitoResource.ExportedAwsResourceName}IdentityPoolId:
-    Value: """"
-  {cognitoResource.ExportedAwsResourceName}SecurityLevel:
-    Value: {cognitoResource.ExportedSecurityLevel}
-");
-                }
-                awsCognitoTemplateBuilder.AppendLine("");
-                awsCognitoTemplateBuilder.AppendLine("#LzAuthenticators end");
-                templateBuilder.Replace("#LzAuthenticators#", awsCognitoTemplateBuilder.ToString());
 
-
-                /* INSERT CONFIG FUNCTION */
+                ///////////////////////////////////////////////////////////////////////////////////////
+                /* CONFIG FUNCTION */
                 var configJson = new StringBuilder();
                 var apiDirectives = directive.Apis.Select(x => solution.Directives[x].Cast<Api>()).Distinct();
                 foreach (var apiDirective in apiDirectives)
@@ -129,10 +113,12 @@ namespace LazyMagic
 ";
                     configJson.Append(jsonText);
                 }
+
+                // we suppot only a single WSAPI 
                 var wsUrl = string.IsNullOrEmpty(wsApi)
                     ? "wsUrl: '',"
                     : "wsUrl: 'wss://${__WebSocketApi__}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentParameter}',"
-                        .Replace("__WebSocketApi__",wsApi);
+                        .Replace("__WebSocketApi__", wsApi);
 
                 var configText = new StringBuilder()
                     .AppendLine("#LzConfigFunction start")
@@ -143,22 +129,26 @@ namespace LazyMagic
                     .AppendLine("#LzConfigFunction end").ToString();
                 templateBuilder.Replace("#LzConfigFunction#", configText);
 
-                /* INSERT LzQueues */
+                ///////////////////////////////////////////////////////////////////////////////////////
+                /* LzQueues */
                 var lzQueuesBuilder = new StringBuilder()
-                    .AppendLine("#LzQueues start")
-                    .Append(GenerateQueueResources(solution, directive))
-                    .AppendLine("#LzQeuues end");
-
+                    .AppendLine("#LzQueues start");
+                lzQueuesBuilder.Append(GenerateSQSResources(solution, directive));
+                lzQueuesBuilder.AppendLine("#LzQeuues end");
                 templateBuilder.Replace("#LzQueues#", lzQueuesBuilder.ToString());
 
+                ///////////////////////////////////////////////////////////////////////////////////////
                 /* Additional OUTPUTS */
                 templateBuilder
                     .Replace("#LzOutputs#", ouptutsBuilder.ToString())
                     .Replace("__ResourceGenerator__", GetType().Name);
-
                 var templatePath = Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Generated", templateName);
+
+                ///////////////////////////////////////////////////////////////////////////////////////
+                /* Write Template */
                 File.WriteAllText(templatePath, templateBuilder.ToString());
 
+                ///////////////////////////////////////////////////////////////////////////////////////
                 // Exports
                 ExportedStackTemplatePath = templatePath;
             }
@@ -169,17 +159,14 @@ namespace LazyMagic
             }
         }
 
-        private List<IAwsApiResource> GetAwsApiResources(SolutionBase solution, Service directive)
-        {
-            var apiResources = directive.Apis
+        private List<IAwsApiResource> GetAwsApiResources(SolutionBase solution, Service directive) =>
+            directive.Apis
                 .Select(x => solution.Directives[x])
                 .OfType<Api>()
                 .SelectMany(apiDirective => apiDirective.Artifacts.Values.OfType<IAwsApiResource>())
                 .Distinct()
                 .ToList();
-
-            return apiResources.Distinct().ToList();
-        }
+        
         private List<AwsCognitoResource> GetAwsCognitoResources(SolutionBase solution, Service directive) =>
            directive.Apis
                .Select(x => solution.Directives[x].Cast<Api>())
@@ -187,7 +174,5 @@ namespace LazyMagic
                .Select(api => (AwsCognitoResource)solution.Directives[api.Authentication].Artifacts.Values.First())
                .Distinct()
                .ToList();
-
-
     }
 }

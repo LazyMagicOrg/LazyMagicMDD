@@ -35,7 +35,10 @@ namespace LazyMagic
 
         public async Task ProcessAsync()
         {
-            Directory.CreateDirectory(Path.Combine(SolutionRootFolderPath,"AWSTemplates","Generated"));
+            var generatedDirectory = Path.Combine(SolutionRootFolderPath, "AWSTemplates", "Generated");
+            Directory.CreateDirectory(generatedDirectory);
+            Directory.GetFiles(generatedDirectory).ToList().ForEach(File.Delete);
+
             await LoadDirectivesFileAsync(); // Reads the Directives from the LazyMagic.yaml file
             Directives.Validate(); // Appies defaults and validates the resulting Directives
             await LoadAggregateSchemas(); // Loads the OpenApi directive files 

@@ -12,6 +12,7 @@ namespace LazyMagic
         public Queue() { }
 
         #region Properties
+        public List<string> Containers { get; set; } = new List<string>();
         #endregion
         public override void AssignDefaults(Directives directives) => AssignDefaults(directives, this.GetType());
         public override void Validate(Directives directives)
