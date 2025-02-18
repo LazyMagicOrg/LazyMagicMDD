@@ -17,7 +17,11 @@ namespace LazyMagic
     public class DotNetSchemaProject : DotNetProjectBase
     {
         #region Properties
-        public override string ProjectFilePath => ExportedProjectPath;
+        public override string ProjectFilePath
+        {
+            get => ExportedProjectPath;
+            set => ExportedProjectPath = value;
+        }
         public override string NameSuffix { get; set; } = "";
         public override string Template { get; set; } = "ProjectTemplates/Schema";
         public override string OutputFolder { get; set; } = "Schemas";

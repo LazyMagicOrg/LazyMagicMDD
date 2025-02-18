@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using static LazyMagic.LzLogger;
 using Microsoft.AspNetCore.Routing.Template;
 using YamlDotNet.Serialization;
-using LazyMagicGenerator;
+using System.Text;
 
 namespace LazyMagic
 {
@@ -18,8 +18,14 @@ namespace LazyMagic
     public class AwsCognitoResource : ArtifactBase
     {
         public override string Template { get; set; } = "AWSTemplates/Templates/sam.cognito.tenant.yaml";
+        public string CallbackURL { get; set; } = "https://www.example.com";
+        public string LogoutURL { get; set; } = "https://www.example.com";
+        public int DeleteAfterDays { get; set; } = 60;
+        public int StartWindowMinutes { get; set; } = 60;
+        public string ScheduleExpression { get; set; } = "cron(0 5 ? * * *)";
         public int SecurityLevel { get; set; } = 1; // defaults to JWT
 
+        public AwsAuthenticationConfig ExportedConfig { get; set; } = null;   
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {
@@ -28,8 +34,8 @@ namespace LazyMagic
             // set the stack name 
             var resourceName = directive.Key + NameSuffix ?? "";
             await InfoAsync($"Generating {directive.Key} {resourceName}");
-            var deploymentConfigYamlFile = Path.Combine(solution.SolutionRootFolderPath, "Generated", "deploymentconfig.yaml");
-            var deploymentConfig = new DeploymentConfig();  
+            var deploymentConfigYamlFile = Path.Combine(solution.SolutionRootFolderPath, "AwsTemplates", "Generated", "deploymentconfig.g.yaml");
+            var deploymentConfig = new AwsDeploymentConfig();  
             if (File.Exists(deploymentConfigYamlFile))
             {
 
@@ -37,18 +43,23 @@ namespace LazyMagic
                 using (var reader = new StringReader(deploymentConfigYaml))
                 {
                     var deserializer = new Deserializer();
-                    deploymentConfig = deserializer.Deserialize<DeploymentConfig>(reader);
+                    deploymentConfig = deserializer.Deserialize<AwsDeploymentConfig>(reader);
                 }
             }
             // Add this authenticator to the deployment config
-            var Authenticator = new Authenticator()
+            ExportedConfig = new AwsAuthenticationConfig()
             {
-                Name = directiveArg.Key
+                Name = directiveArg.Key,
+                Template = Template,
+                CallbackURL = CallbackURL,
+                LogoutURL = LogoutURL,
+                DeleteAfterDays = DeleteAfterDays,
+                StartWindowMinutes = StartWindowMinutes,
+                ScheduleExpression = ScheduleExpression,
+                SecurityLevel = SecurityLevel
             };
-            deploymentConfig.Authenticators.Add(Authenticator);
-            var serializer = new Serializer();
-            var yaml = serializer.Serialize(deploymentConfig);
-            File.WriteAllText(deploymentConfigYamlFile, yaml);
+
+            ExportedName = directive.Key;
         }
     }
 }

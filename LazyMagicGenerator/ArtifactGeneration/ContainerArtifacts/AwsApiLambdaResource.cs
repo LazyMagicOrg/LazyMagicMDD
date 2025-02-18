@@ -25,6 +25,7 @@ namespace LazyMagic
         public string Tracing { get; set; } = "Active";
         public string Runtime { get; set; } = "dotnet8";
         public string DotNetTarget { get; set; } = "net8.0";
+        public List<string> ManagedPolicyArns { get; set; } = new List<string>();
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {
@@ -39,6 +40,15 @@ namespace LazyMagic
                 var errMsgPrefix = $"Error generating {GetType().Name}: {lambdaName}";
                 directiveKey = directive.Key;
                 await InfoAsync($"Generating {directive.Key}Resource for {lambdaName}");
+
+                // Add required ManagedPolicies
+                const string baseExecution = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole";
+                if (!ManagedPolicyArns.Contains(baseExecution))
+                    ManagedPolicyArns.Add(baseExecution);   
+
+                const string demonWrite = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess";
+                if (!ManagedPolicyArns.Contains(demonWrite))
+                    ManagedPolicyArns.Add(demonWrite);
 
                 // Get the DotNetLambdaProject Artifact. There should only be one.
                 var dotNetLambdaProject = directive.Artifacts
@@ -63,7 +73,8 @@ namespace LazyMagic
                     .Replace("__Tracing__", Tracing)
                     .Replace("__DotNetTarget__", DotNetTarget)
                     .Replace("__Runtime__", Runtime)
-                    ;
+                    .Replace("__ManagedPolicyArns__", string.Join("\n", ManagedPolicyArns.Select(x => $"      - {x}")));
+                ;
 
                 // Exports
                 ExportedContainerKey = directive.Key;

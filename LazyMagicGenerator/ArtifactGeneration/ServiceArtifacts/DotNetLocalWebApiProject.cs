@@ -34,7 +34,11 @@ namespace LazyMagic
         #region Properties
         public override string Template { get; set; } = "ProjectTemplates/WebApi";
         public override string OutputFolder { get; set; } = "";
-        public override string ProjectFilePath => ExportedProjectPath;
+        public override string ProjectFilePath
+        {
+            get => ExportedProjectPath;
+            set => ExportedProjectPath = value;
+        }
         #endregion
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)

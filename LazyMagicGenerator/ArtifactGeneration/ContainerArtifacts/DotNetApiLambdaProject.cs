@@ -17,6 +17,7 @@ namespace LazyMagic
         public override string Template { get; set; } = "ProjectTemplates/ApiLambda";
         public string ExportedApiPrefix { get; set; } = "";    
         public string ExportedOpenApiSpec { get; set; } = "";   
+        public override string ProjectFilePath { get; set; } = "";   
         #endregion
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {

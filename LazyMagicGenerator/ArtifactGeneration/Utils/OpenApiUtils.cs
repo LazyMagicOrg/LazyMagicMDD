@@ -76,6 +76,7 @@ namespace LazyMagic
 
         public static async Task<string> MergeYamlAsync(string solutionRootFolder, List<string> yamlList)
         {
+            await Task.Delay(0);
             JObject jsonOpenApiDoc = JObject.Parse("{}");
             var count = 0;
             foreach (var yamlText in yamlList)

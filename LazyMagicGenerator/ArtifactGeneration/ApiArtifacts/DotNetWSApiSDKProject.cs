@@ -19,7 +19,11 @@ namespace LazyMagic
     public class DotNetWSApiSDKProject : DotNetProjectBase
     {
         #region Properties
-        public override string ProjectFilePath => ExportedProjectPath;
+        public override string ProjectFilePath
+        {
+            get => ExportedProjectPath;
+            set => ExportedProjectPath = value;
+        }
         public override string OutputFolder { get; set; } = "ClientSDKs";
 
         #endregion

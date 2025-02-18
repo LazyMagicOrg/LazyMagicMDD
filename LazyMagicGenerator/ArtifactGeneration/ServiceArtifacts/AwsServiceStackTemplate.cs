@@ -33,6 +33,7 @@ namespace LazyMagic
         
         // Exports
         public string ExportedStackTemplatePath { get; set; } = null;
+        public AwsServiceConfig AwsServiceConfig { get; set; } = null;
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {
@@ -43,14 +44,13 @@ namespace LazyMagic
                 var wsApi = MessagingWebSocketApi ?? "";
 
                 // Set the service name
-               
                 await InfoAsync($"Generating {directive.Key} {templateName}");
                 var systemTemplatePath = Template;
                 var tenantCloudFrontConfigFunctionSnippet = 
                     File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, ConfigFunctionTemplate))
                     .Replace("__TemplateSource__", ConfigFunctionTemplate);
 
-                var ouptutsBuilder = new StringBuilder();
+                var outputsBuilder = new StringBuilder();
 
                 var templateBuilder = new StringBuilder()
                     .Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, systemTemplatePath)))
@@ -61,7 +61,23 @@ namespace LazyMagic
                 /* PARAMETERS */
                 var lzParametersBuilder = new StringBuilder();
                 lzParametersBuilder.AppendLine("#LzParameters start");
-                lzParametersBuilder.AppendLine("# none configured");
+                var cognitoStacks = GetAwsCognitoResources(solution, directive);
+                foreach(var cognitoStack in cognitoStacks)
+                {
+                    lzParametersBuilder
+                        .AppendLine($"  {cognitoStack.ExportedName}UserPoolIdParameter:")
+                        .AppendLine($"    Type: String")
+                        .AppendLine($"  {cognitoStack.ExportedName}UserPoolClientIdParameter:")
+                        .AppendLine($"    Type: String")
+                        .AppendLine($"  {cognitoStack.ExportedName}IdentityPoolIdParameter:")
+                        .AppendLine($"    Type: String")
+                        .AppendLine($"  {cognitoStack.ExportedName}SecurityLevelParameter:")
+                        .AppendLine($"    Type: String")
+                        .AppendLine($"  {cognitoStack.ExportedName}UserPoolArnParameter:")
+                        .AppendLine($"    Type: String");
+                }
+                if(cognitoStacks.Count == 0)
+                    lzParametersBuilder.AppendLine("# none configured");
                 lzParametersBuilder.AppendLine("#LzParameters end");
                 templateBuilder.Replace("#LzParameters#", lzParametersBuilder.ToString());
 
@@ -73,6 +89,15 @@ namespace LazyMagic
                 lzLambdasBuilder.Append(GenerateWSApiLambdaResources(solution, directive));
                 lzLambdasBuilder.AppendLine("#LzLambdas end");
                 templateBuilder.Replace("#LzLambdas#",lzLambdasBuilder.ToString());
+                var lambdaResources = GetLambdaResources(solution, (Service)directive);
+                foreach(var lambdaResource in lambdaResources)
+                {
+                    outputsBuilder.Append($@"
+  {lambdaResource.ExportedAwsResourceName}ExecutionRoleName:
+    Value: !Ref {lambdaResource.ExportedAwsResourceName}ExecutionRole
+");
+                }
+
 
                 ///////////////////////////////////////////////////////////////////////////////////////
                 /* LZ APIs */
@@ -82,7 +107,7 @@ namespace LazyMagic
                 foreach (var httpApiResource in apiResources)
                 {
                     apiTemplateBuilder.Append(httpApiResource.ExportedAwsResourceDefinition);
-                    ouptutsBuilder.Append($@"
+                    outputsBuilder.Append($@"
   {httpApiResource.ExportedAwsResourceName}Id:
     Value: !Ref {httpApiResource.ExportedAwsResourceName}
 ");
@@ -94,42 +119,6 @@ namespace LazyMagic
 
 
                 ///////////////////////////////////////////////////////////////////////////////////////
-                /* CONFIG FUNCTION */
-                var configJson = new StringBuilder();
-                var apiDirectives = directive.Apis.Select(x => solution.Directives[x].Cast<Api>()).Distinct();
-                foreach (var apiDirective in apiDirectives)
-                {
-                    if (string.IsNullOrEmpty(apiDirective.Authentication)) continue; // No authentication 
-                    var apiArtifact = apiDirective.Artifacts.Values.FirstOrDefault(x => x is AwsHttpApiResource) as AwsHttpApiResource;
-                    var jsonText = $@"
-                                {apiDirective.Authentication}: {{
-                                    awsRegion: '${{AWS::Region}}',
-                                    userPoolName: '{apiDirective.Authentication}',
-                                    userPoolId: '${{{apiDirective.Authentication}UserPool}}',
-                                    userPoolClientId: '${{{apiDirective.Authentication}UserPoolClient}}',
-                                    userPoolSecurityLevel: 1,
-                                    identityPoolId: ''
-                                }},
-";
-                    configJson.Append(jsonText);
-                }
-
-                // we suppot only a single WSAPI 
-                var wsUrl = string.IsNullOrEmpty(wsApi)
-                    ? "wsUrl: '',"
-                    : "wsUrl: 'wss://${__WebSocketApi__}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentParameter}',"
-                        .Replace("__WebSocketApi__", wsApi);
-
-                var configText = new StringBuilder()
-                    .AppendLine("#LzConfigFunction start")
-                    .Append(tenantCloudFrontConfigFunctionSnippet)
-                    .Replace("__wsUrl__",wsUrl)
-                    .Replace("__JsonText__", configJson.ToString())
-                    .AppendLine("")
-                    .AppendLine("#LzConfigFunction end").ToString();
-                templateBuilder.Replace("#LzConfigFunction#", configText);
-
-                ///////////////////////////////////////////////////////////////////////////////////////
                 /* LzQueues */
                 var lzQueuesBuilder = new StringBuilder()
                     .AppendLine("#LzQueues start");
@@ -137,10 +126,12 @@ namespace LazyMagic
                 lzQueuesBuilder.AppendLine("#LzQeuues end");
                 templateBuilder.Replace("#LzQueues#", lzQueuesBuilder.ToString());
 
+
+
                 ///////////////////////////////////////////////////////////////////////////////////////
                 /* Additional OUTPUTS */
                 templateBuilder
-                    .Replace("#LzOutputs#", ouptutsBuilder.ToString())
+                    .Replace("#LzOutputs#", outputsBuilder.ToString())
                     .Replace("__ResourceGenerator__", GetType().Name);
                 var templatePath = Path.Combine(solution.SolutionRootFolderPath, "AWSTemplates", "Generated", templateName);
 
@@ -151,6 +142,10 @@ namespace LazyMagic
                 ///////////////////////////////////////////////////////////////////////////////////////
                 // Exports
                 ExportedStackTemplatePath = templatePath;
+                AwsServiceConfig = new AwsServiceConfig()
+                {
+                    Name = directive.Key
+                };
             }
 
             catch (Exception ex)
@@ -175,4 +170,5 @@ namespace LazyMagic
                .Distinct()
                .ToList();
     }
+
 }

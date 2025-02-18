@@ -50,7 +50,7 @@ namespace LazyMagic
                         throw new Exception($"{errMsgPrefix} {lambdaName}, Authentication == true but no Authentication services specified.");
                     string userpools = "";
                     foreach (var userpool in Authentications)
-                        userpools += $@"            - !GetAtt {userpool}UserPool.Arn
+                        userpools += $@"            - !Ref {userpool}UserPoolArnParameter
 ";
                     cognitopolicy = cognitopolicy.Replace("#UserPoolArns#", userpools);
                 }

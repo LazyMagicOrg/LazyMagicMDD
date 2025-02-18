@@ -21,7 +21,11 @@ namespace LazyMagic
     {
 
         #region Properties
-        public override string ProjectFilePath => ExportedProjectPath;
+        public override string ProjectFilePath
+        {
+            get => ExportedProjectPath;
+            set => ExportedProjectPath = value;
+        }
         public override string NameSuffix { get; set; } = "Repo";
         public override string Template { get; set; } = "ProjectTemplates/Repo";
         public override string OutputFolder { get; set; } = "Schemas";
@@ -220,15 +224,21 @@ namespace LazyMagic
 // </auto-generated>
 //----------------------
 namespace {nameSpace};
-public static class {projectName}Extensions
+public static partial class {projectName}Extensions
 {{
     public static IServiceCollection Add{projectName}(this IServiceCollection services)
     {{
 {repoRegistrations}
 {serviceRegistrations}
-
+        AddCustom(services);    
         return services;
     }}
+    // Implement this partial method in a separate file to add custom service registrations
+    // Note that this method doesn't return services as partial methods don't allow return 
+    // values other than void. Returning the collection is normally implemented to support 
+    // method chaining, but that is not required here.
+    static partial void AddCustom(IServiceCollection services);
+
 }}
 ";
             File.WriteAllText(filePath, classbody);

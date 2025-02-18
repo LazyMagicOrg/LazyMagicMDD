@@ -35,36 +35,43 @@ namespace LazyMagic
 
             if (directives.TryGetValue(Defaults, out var defaultDirective))
             {
-                var deserializer = new DeserializerBuilder()
-                       .WithTypeConverter(new DirectivePropertyConverter())
-                       .WithTypeConverter(new ArtifactsPropertyConverter())
-                       .WithTypeConverter(new ArtifactPropertyConverter())
-                       .WithNodeDeserializer(inner => new DetailedErrorNodeDeserializer(inner), s => s.InsteadOf<ObjectNodeDeserializer>())
-                       .Build();
 
                 var serializer = new SerializerBuilder()
+                    .JsonCompatible()  // This enables JSON.NET compatibility
                     .Build();
-
 
                 // Use Newtonsoft.Json to merge the default directive with this directive
                 JObject defaultObject = JObject.FromObject(defaultDirective);
-
-
+                var defaultObjectJson = defaultObject.ToString();
                 JObject thisObject = JObject.FromObject(this);
+                var thisObjectJson = thisObject.ToString();
                 defaultObject.Merge(thisObject, new JsonMergeSettings
                 {
                     MergeArrayHandling = MergeArrayHandling.Union,
                     MergeNullValueHandling = MergeNullValueHandling.Ignore,
                 });
-                var directiveJson = defaultObject.ToString();
-                var directiveObject = JsonConvert.DeserializeObject(directiveJson, type);
-                var yaml = serializer.Serialize(directiveObject);
+                var mergedObjectJson = defaultObject.ToString();
 
-                using (var reader = new StringReader(yaml))
-                {
-                    var newDirective = deserializer.Deserialize(reader, type);
-                    directives[Key] = (DirectiveBase)newDirective;
-                }
+                // Deserialization to a yaml object
+                var yamlObject = new DeserializerBuilder()
+                    .Build()
+                    .Deserialize(new StringReader(mergedObjectJson));
+
+                // Create a yaml string from yaml object
+                var yamlstring = new SerializerBuilder().Build().Serialize(yamlObject);
+
+                // Use our property and artifact converters to serialize to a directive
+                var newDirective = new DeserializerBuilder()
+                    //.WithTypeConverter(new DirectivesPropertyConverter())
+                    .WithTypeConverter(new DirectivePropertyConverter())
+                    .WithTypeConverter(new ArtifactsPropertyConverter())
+                    .WithTypeConverter(new ArtifactPropertyConverter())
+                    .WithNodeDeserializer(inner => new DetailedErrorNodeDeserializer(inner), s => s.InsteadOf<ObjectNodeDeserializer>())
+                    .Build()
+                    .Deserialize(new StringReader(yamlstring), type);
+
+                directives[Key] = (DirectiveBase)newDirective;
+
                 return;
             }
             else

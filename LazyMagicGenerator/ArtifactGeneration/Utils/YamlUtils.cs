@@ -12,26 +12,21 @@ namespace LazyMagic
     {
         public static string ConvertJsonToYaml(string jsonText)
         {
-            // Convert json to yaml
             dynamic expandoObject = JsonConvert.DeserializeObject<ExpandoObject>(jsonText);
-            var serializer = new SerializerBuilder()
-                                //.DisableAliases()
-                                .Build();
+            var serializer = new SerializerBuilder().Build();
             var yamlContent = serializer.Serialize(expandoObject);
-
-            // 3. ParseAndAdd the YAML string into YamlDotNet representation
             var yamlStream = new YamlStream();
-            yamlStream.Load(new StringReader(yamlContent));
 
-            // 4. Traverse the YAML nodes and quote the mapping keys
-            QuoteMappingKeys(yamlStream.Documents[0].RootNode);
-
-            // 5. Serialize the modified nodes back to a YAML string
-            var writer = new StringWriter();
-            yamlStream.Save(writer, false);
-
-            return writer.ToString();
+            using (var reader = new StringReader(yamlContent))
+            using (var writer = new StringWriter())
+            {
+                yamlStream.Load(reader);
+                QuoteMappingKeys(yamlStream.Documents[0].RootNode);
+                yamlStream.Save(writer, false);
+                return writer.ToString();
+            }
         }
+
         private static void QuoteMappingKeys(YamlNode node)
         {
             if (node is YamlMappingNode mapping)

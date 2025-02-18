@@ -8,8 +8,8 @@ namespace LazyMagic
         public virtual string Template { get; set; }
         public virtual string OutputFolder { get; set; } 
         public virtual string NameSuffix { get; set; } 
-        public virtual string ExportedName { get; set; } 
-        [YamlIgnore]
+        public virtual string ExportedName { get; set; }
+        //[YamlIgnore]
         public virtual string ProjectFilePath { get; set;  } = "";
         public virtual void AssignDefaults(ArtifactBase artifactBase)
         {

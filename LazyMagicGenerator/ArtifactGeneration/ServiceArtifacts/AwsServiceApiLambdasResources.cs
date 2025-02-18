@@ -84,7 +84,7 @@ namespace LazyMagic
                 .ToList();
         }
 
-        private static List<AwsApiLambdaResource> GetLambdaResources(SolutionBase solution, Service directive) =>
+        public static List<AwsApiLambdaResource> GetLambdaResources(SolutionBase solution, Service directive) =>
             directive.Apis
                 .Select(k => (Api)solution.Directives[k])
                 .SelectMany(api => api.Containers)

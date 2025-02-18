@@ -20,7 +20,11 @@ namespace LazyMagic
     public class DotNetControllerProject : DotNetProjectBase
     {
         #region Properties
-        public override string ProjectFilePath => ExportedProjectPath;
+        public override string ProjectFilePath
+        {
+            get => ExportedProjectPath;
+            set => ExportedProjectPath = value;
+        }
         public override string Template { get; set; } = "ProjectTemplates/Controller";
         public override string OutputFolder { get; set; } = "Modules";
 
@@ -120,7 +124,7 @@ namespace LazyMagic
                     ExportedPathOps.Add((path.Key, path.Value.Keys.ToList()));
 
             } 
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw new Exception($"Error Generating {GetType().Name} for {projectName}");
             }
@@ -169,21 +173,8 @@ namespace {nameSpace};
 /// You then register your implementation BEFORE calling this projects service registration method. Note that we use TryAddSingleton to avoid
 /// registering multiple implementations of the same interface; the first registration wins.
 /// </summary>
-public interface I{projectName}Authorization : ILzAuthorization 
+public partial interface I{projectName}Authorization : ILzAuthorization 
 {{ 
-    public async Task<List<string>> GetUserPermissionsAsync(string lzUserId, string userName, string table)
-    {{
-        // Since default methods can't access instance state, we call the helper method that can.
-        return await GetUserDefaultPermissionsAsync(lzUserId, userName, table);
-    }}
-    public Task<List<string>> GetUserDefaultPermissionsAsync(string lzUserId, string userName, string table);
-
-    public async Task LoadPermissionsAsync()
-    {{
-        // Since default methods can't access instance state, we call the helper method that can.
-        await LoadDefaultPermissionsAsync();    
-    }}   
-    public Task LoadDefaultPermissionsAsync();
 }}
 
 /// <summary>
@@ -196,17 +187,6 @@ public interface I{projectName}Authorization : ILzAuthorization
 public partial class {projectName}Authorization : LzAuthorization, I{projectName}Authorization
 {{
     
-    public virtual async Task<List<string>> GetUserDefaultPermissionsAsync(string lzUserId, string userName, string table)
-    {{
-        // TODO: generated code here
-        return await Task.FromResult(new List<string>());
-    }}
-
-    public virtual async Task LoadDefaultPermissionsAsync()
-    {{
-        // TODO: generatedcode here
-        await Task.CompletedTask;
-    }}
 }}
 ";
             File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
