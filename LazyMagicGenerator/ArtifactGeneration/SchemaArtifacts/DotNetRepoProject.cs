@@ -96,27 +96,6 @@ namespace LazyMagic
                 GlobalUsings.AddRange(dotnetSchemaProject.ExportedGlobalUsings);
                 ExportedEntities.AddRange(dotnetSchemaProject.ExportedEntities);
 
-
-                //// Get Dependencies
-                //// A DotNetRepoProject depends on a DotNetSchemaProject. Get the schema project exports.
-                //var dependantSchemaArtifacts = solution.Directives.GetArtifactsByType(directive.Schemas, typeof(DotNetSchemaProject));
-                //dependantSchemaArtifacts.Add(dotnetSchemaProject);
-                //foreach (var dotNetSchemaArtifact in dependantSchemaArtifacts)
-                //{
-                //    var dotNetSchemaProject = dotNetSchemaArtifact as DotNetSchemaProject;
-                //    ProjectReferences.Add(dotNetSchemaProject.ExportedProjectPath);
-                //    GlobalUsings.AddRange(dotNetSchemaProject.ExportedGlobalUsings);
-                //    ExportedEntities.AddRange(dotNetSchemaProject.ExportedEntities);
-                //}
-                //var dependantRepoArtifacts = solution.Directives.GetArtifactsByType(directive.Schemas, typeof(DotNetRepoProject));
-                //foreach (var dotNetRepoArtifact in dependantRepoArtifacts)
-                //{
-                //    var dotNetRepoProject = dotNetRepoArtifact as DotNetRepoProject;
-                //    ProjectReferences.Add(dotNetRepoProject.ExportedProjectPath);
-                //    GlobalUsings.AddRange(dotNetRepoProject.ExportedGlobalUsings);
-                //    ServiceRegistrations.AddRange(dotNetRepoProject.ExportedServiceRegistrations);
-                //}
-
                 // Copy the _template project to the target project. Removes *.g.* files.
                 var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
@@ -201,7 +180,7 @@ namespace LazyMagic
         private static void GenerateServiceRegistrations(List<string> repos, List<string> services, string nameSpace, string projectName, string filePath)
         {
             var repoRegistrations = $@"
-        services.AddAWSService<Amazon.DynamoDBv2.IAmazonDynamoDB>();
+        services.TryAddAWSService<Amazon.DynamoDBv2.IAmazonDynamoDB>();
 "; 
 
             foreach (var repo in repos)
@@ -255,9 +234,8 @@ public static partial class {projectName}Extensions
 // </auto-generated>
 //----------------------
 namespace {nameSpace};
-public partial class {entityName}Envelope : DataEnvelope<{entityName}>{{}}
-public partial interface I{entityName}Repo : IDYDBRepository<{entityName}Envelope, {entityName}> {{}}
-public partial class {entityName}Repo : DYDBRepository<{entityName}Envelope, {entityName}>, I{entityName}Repo
+public partial interface I{entityName}Repo : IDocumentRepo<{entityName}> {{}}
+public partial class {entityName}Repo : DYDBRepository<{entityName}>, I{entityName}Repo
 {{
     public {entityName}Repo(IAmazonDynamoDB client) : base(client) {{}}
 }}
