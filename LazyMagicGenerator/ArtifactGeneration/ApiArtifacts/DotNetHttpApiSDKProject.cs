@@ -22,7 +22,11 @@ namespace LazyMagic
         public override string Template { get; set; } = "ProjectTemplates/ClientSDK";
         public override string OutputFolder { get; set; } = "ClientSDKs";
 
-        public override string ProjectFilePath => ExportedProjectPath;
+        public override string ProjectFilePath
+        {
+            get => ExportedProjectPath;
+            set => ExportedProjectPath = value;
+        }
         #endregion
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)

@@ -21,9 +21,9 @@ namespace LazyMagic
         }
 
         /// <summary>
-        /// This custom converter reads the Directives property from the YAML file and
-        /// calls the Parse method of the Directives class to parse the Directives property
-        /// into the artifactTypeName specified in the Directive.Type property. 
+        /// This custom converter reads the Artifact property from the YAML file and
+        /// calls the Parse method of the Artifact class to parse the Artifact property
+        /// into the artifactTypeName specified in the Artifact.Type property. 
         /// </summary>
         /// <param name="parser"></param>
         /// <param name="type"></param>

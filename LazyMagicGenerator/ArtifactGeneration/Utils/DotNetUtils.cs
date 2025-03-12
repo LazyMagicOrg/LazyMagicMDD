@@ -146,6 +146,20 @@ namespace LazyMagic
         {
             return method.Substring(0, 1).ToUpper() + method.Substring(1) + "Async";
         }
+        public static CompilationUnitSyntax RemoveInterface(CompilationUnitSyntax root, string interfaceName)
+        {
+            var classDecls = root
+                .DescendantNodes().OfType<NamespaceDeclarationSyntax>()
+                .First()
+                    ?.DescendantNodes().OfType<InterfaceDeclarationSyntax>()
+                    .Where(x => x.Identifier.ValueText.Equals(interfaceName))
+                    .ToList(); // ex: OrderController
+
+            root = root.ReplaceNode(root,
+                root.RemoveNodes(classDecls, SyntaxRemoveOptions.KeepNoTrivia));
+
+            return root;
+        }
         public static CompilationUnitSyntax RemoveClass(CompilationUnitSyntax root, string className)
         {
             var classDecls = root

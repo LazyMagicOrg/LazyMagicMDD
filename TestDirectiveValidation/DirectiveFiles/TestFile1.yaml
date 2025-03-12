@@ -1,0 +1,51 @@
+LazyMagicDirectivesVersion: 2.0.0
+
+Directives:
+# Cross cutting directives
+  # SCHEMAS Default
+  SchemaDefault:
+    Type: Schema
+    IsDefault: true # this directive may be referenced by other Schema directives
+    Artifacts:
+      DotNetSchemaProject: # system DTOs classes
+      DotNetRepoProject: # DynamoDB CRUDL methods for DTOs
+
+  # MODULES Default 
+  ModuleDefault:
+    Type: Module
+    IsDefault: true # this directive may be referenced by other Module directives
+    Artifacts:
+      DotNetControllerProject: # methods for each REST path operation
+
+  # CONTAINERS Default
+  AwsApiLambdaContainerDefault:
+    Type: Container
+    IsDefault: true # this directive may be referenced by other Container directives
+    Artifacts:
+      DotNetApiLambdaProject: # Lambda function that processes the HttpApi request
+      AwsApiLambdaResource: # AWS SAM template resource for the Lambda function
+
+  # Modules
+  LzMessagingModule:
+    # path operations include subscribe, unsubscribe
+    Type: Module
+    Defaults: ModuleDefault
+    OpenApiSpecs: # reads the path section
+    - openapi.messaging.yaml
+
+  # MODULES - libraries handling paths
+  # StoreModule:
+  #   Type: Module
+  #   Defaults: ModuleDefault
+  #   OpenApiSpecs:
+  #   - openapi.store.yaml
+  #   - openapi.admin.yaml
+
+  # CONTAINERS - executables
+  StoreLambda:
+    Type: Container
+    ApiPrefix: Store
+    Defaults: AwsApiLambdaContainerDefault
+    Modules:
+    - LzMessagingModule
+    - StoreModule

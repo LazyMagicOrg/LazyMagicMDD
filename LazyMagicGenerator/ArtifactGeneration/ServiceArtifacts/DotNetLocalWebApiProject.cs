@@ -34,7 +34,11 @@ namespace LazyMagic
         #region Properties
         public override string Template { get; set; } = "ProjectTemplates/WebApi";
         public override string OutputFolder { get; set; } = "";
-        public override string ProjectFilePath => ExportedProjectPath;
+        public override string ProjectFilePath
+        {
+            get => ExportedProjectPath;
+            set => ExportedProjectPath = value;
+        }
         #endregion
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
@@ -113,8 +117,6 @@ namespace LazyMagic
 
                 GenerateConfigureSvcsFile(projectName, nameSpace, Path.Combine(solution.SolutionRootFolderPath, outputFolder, projectName, $"ConfigureSvcs") + ".g.cs");
 
-                GenerateCustomRoutingMiddlewareFile(projectName, nameSpace, containerPrefixes, Path.Combine(solution.SolutionRootFolderPath, outputFolder, projectName, $"CustomRoutingMiddleware") + ".g.cs");
-
                 // Exports
                 ExportedProjectPath = Path.Combine(outputFolder, projectName, projectName + ".csproj");
 
@@ -143,12 +145,6 @@ public partial class Startup
 
             File.WriteAllText(filePath, template);
         }
-        private void GenerateCustomRoutingMiddlewareFile(string projectName, string nameSpace, List<string> prefixes, string filePath)
-        {
-            // var prefixItems = string.Join(",", prefixes.Select(x => $"\"{x}\""));
-            var template = File.ReadAllText(filePath);
-            //template = template.Replace("\"__Prefixes__\"", prefixItems);
-            File.WriteAllText(filePath, template);
-        }
+
     }
 }

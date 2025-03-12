@@ -19,6 +19,9 @@ namespace LazyMagic
         public string ExportedAwsResourceName { get; set; } = "";   
         public int VisibilityTimeout { get; set; } = 180;
         public int MessageRetentionPeriod { get; set; } = 345600; // 4 days
+        public int DelaySeconds { get; set; } = 0;
+        public int DlqMaxReceiveCount { get; set; } = 500;
+        public int DlqMessageRetentionPeriod { get; set; } = 345600; // 4 days
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {
@@ -42,7 +45,11 @@ namespace LazyMagic
                     .Replace("__TemplateSource__",Template)
                     .Replace("__QueueName__", queueName)
                     .Replace("__VisibilityTimeout__", VisibilityTimeout.ToString())
-                    .Replace("__MessageRetentionPeriod__", MessageRetentionPeriod.ToString());
+                    .Replace("__MessageRetentionPeriod__", MessageRetentionPeriod.ToString())
+                    .Replace("__DelaySeconds__", DelaySeconds.ToString())
+                    .Replace("__DlqMaxReceiveCount__", DlqMaxReceiveCount.ToString())
+                    .Replace("__DlqMessageRetentionPeriod__", DlqMessageRetentionPeriod.ToString())
+                    ;
 
                 // Exports
                 ExportedContainerKey = directive.Key;

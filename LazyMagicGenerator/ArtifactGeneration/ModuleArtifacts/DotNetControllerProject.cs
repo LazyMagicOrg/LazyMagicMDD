@@ -13,6 +13,7 @@ using static LazyMagic.OpenApiUtils;
 using static LazyMagic.OpenApiExtensions;
 using NSwag;
 using FluentValidation.Results;
+using System.Text.RegularExpressions;
 using System.Xml.Schema;
 
 namespace LazyMagic
@@ -20,7 +21,11 @@ namespace LazyMagic
     public class DotNetControllerProject : DotNetProjectBase
     {
         #region Properties
-        public override string ProjectFilePath => ExportedProjectPath;
+        public override string ProjectFilePath
+        {
+            get => ExportedProjectPath;
+            set => ExportedProjectPath = value;
+        }
         public override string Template { get; set; } = "ProjectTemplates/Controller";
         public override string OutputFolder { get; set; } = "Modules";
 
@@ -78,32 +83,93 @@ namespace LazyMagic
 
                 GenerateCommonProjectFiles(sourceProjectDir, targetProjectDir);
 
-                // Generate classes using NSwag 
-                // Note that NSWAG is hardcoded to add 'Controller' to the classname.
-                var nswagSettings = new CSharpControllerGeneratorSettings
-                {
-                    UseActionResultType = true,
-                    ClassName = projectName,
-                    ControllerTarget = NSwag.CodeGeneration.CSharp.Models.CSharpControllerTarget.AspNetCore,
-                    //ControllerBaseClass = "Microsoft.AspNetCore.Mvc.Controller",
-                    ControllerBaseClass = $"I{projectName}Controller",
-                    CSharpGeneratorSettings =
-                {
-                    Namespace = nameSpace,
-                }
-                };
+               // Generate classes using NSwag
+               // We only use the NSWAG generated code as a starting point. It is not 
+               // very well suited for generated interface overriding. 
+               var nswagSettings = new CSharpControllerGeneratorSettings
+               {
+                   UseActionResultType = true,
+                   ClassName = projectName,
+                   ControllerTarget = NSwag.CodeGeneration.CSharp.Models.CSharpControllerTarget.AspNetCore,
+                   CSharpGeneratorSettings =
+                       {
+                            Namespace = nameSpace,
+                       }
+               };
                 var nswagGenerator = new CSharpControllerGenerator(openApiDocument, nswagSettings);
                 var code = nswagGenerator.GenerateFile();
-                var root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
-                root = RemoveGeneratedSchemaClasses(root); // strip out schema
 
-                GenerateControllerClass(ref root, openApiDocument, interfaces, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, projectName) + ".g.cs");
+                // OK, now we start munging the NSWAG generated code
+                var root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
+
+                // We don't need the schema classes so strip them out
+                root = RemoveGeneratedSchemaClasses(root); 
+
+                // We don't need the NSWAG generated interface so strip it out
+                //root = RemoveInterface(root, $"I{projectName}Controller");
+
+                // Clean it up to make it readable.
+                var scratchpad = root.ToFullString();
+                code = scratchpad.Replace($"partial class {projectName}Controller",$"abstract class {projectName}ControllerBase")
+                    .Replace(": Microsoft.AspNetCore.Mvc.ControllerBase",$": Controller, I{projectName}Controller")
+                    .Replace("Microsoft.AspNetCore.Mvc.","") // Just a cosmetic. Improves readability.
+                    .Replace("System.Threading.Tasks.",""); // Just a cosmetic. Improves readability.
+
+                /// Remove the NSWAG #pragma lines
+                code = Regex.Replace(code,
+                    @"^\s*#pragma.*$[\r\n]?",
+                    "",
+                    RegexOptions.Multiline);
+
+                root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
+
+                // Extract and save the Interface file
+                RemoveAsyncFromInterfaceMethodNames(ref root);
+                var interfaceCode = GetInterfaceCode(root);
+                File.WriteAllText(Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"I{projectName}Controller") + ".g.cs", interfaceCode);
+
+                // Remove the Interface from the compilation unit
+                RemoveInterface(ref root);
+                code = root.ToFullString();
+
+                // Finalize the {projectName}ControllerBase class 
+                code =
+@"// NSWAG code refactored by LazyMagic.
+// We use NSWAG to generate a baseclass, partial class and interface. 
+// I{ModuleName}Controller.g.cs - defines a partial interface
+// {ModuleName}ControllerBase.g.cs - defines the base class
+// {ModuleName}Controller.g.cs - defines a partial class that inherits the base class
+// To add or override class behavior, create a new partial class file
+// {projectName}Controller.cs - overrides methods in the base class
+// Dependency Injection system.
+// Note: We also generate some helper classes 
+// {ModuleName}Authorization.g.cs - Partial class for Authorization system
+// {ModuleName}Registration.g.cs - Registers classes with the DI system
+//
+"
+                    + code;
+
+                root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
+
+                GenerateBaseClass(ref root, openApiDocument, interfaces, Dependencies, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}ControllerBase") + ".g.cs");
+
+                //GenerateControllerClassFile(projectName, interfaces, Dependencies, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Controller") + ".g.cs"); // This is a partial class containing the constructor with the repo arguments etc.
 
                 GenerateAuthorizationClass(ref root, openApiDocument, projectName, nameSpace, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Authorization") + ".g.cs");
 
-                GenerateImplClassGenFile(projectName, interfaces, Dependencies, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Impl") + ".g.cs"); // This is a partial class containing the constructor with the repo arguments. Suffix: 'Impl.g.cs'
-
                 GenerateServiceRegistrationsClass(projectName, nameSpace, ServiceRegistrations, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Registrations") + ".g.cs"); // This class contains the extension methods to register necesssry services
+
+                // Write the partial class
+                var classCode =
+$@"
+namespace {projectName};
+public partial class {projectName}Controller : {projectName}ControllerBase {{}}
+";
+                root = CSharpSyntaxTree.ParseText(classCode).GetCompilationUnitRoot();
+                InsertConstructor(ref root, projectName + "Controller", interfaces, Dependencies);
+                classCode = root.ToFullString();
+                File.WriteAllText(Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Controller") + ".g.cs", classCode);
+
 
                 // Exports
                 // Write Modified OpenApi specs to file
@@ -120,10 +186,12 @@ namespace LazyMagic
                     ExportedPathOps.Add((path.Key, path.Value.Keys.ToList()));
 
             } 
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw new Exception($"Error Generating {GetType().Name} for {projectName}");
             }
+
+
         }
         private static List<string> GetRequiredSchemas(SolutionBase solution, List<string> schemaEntities)
         {
@@ -169,21 +237,8 @@ namespace {nameSpace};
 /// You then register your implementation BEFORE calling this projects service registration method. Note that we use TryAddSingleton to avoid
 /// registering multiple implementations of the same interface; the first registration wins.
 /// </summary>
-public interface I{projectName}Authorization : ILzAuthorization 
+public partial interface I{projectName}Authorization : ILzAuthorization 
 {{ 
-    public async Task<List<string>> GetUserPermissionsAsync(string lzUserId, string userName, string table)
-    {{
-        // Since default methods can't access instance state, we call the helper method that can.
-        return await GetUserDefaultPermissionsAsync(lzUserId, userName, table);
-    }}
-    public Task<List<string>> GetUserDefaultPermissionsAsync(string lzUserId, string userName, string table);
-
-    public async Task LoadPermissionsAsync()
-    {{
-        // Since default methods can't access instance state, we call the helper method that can.
-        await LoadDefaultPermissionsAsync();    
-    }}   
-    public Task LoadDefaultPermissionsAsync();
 }}
 
 /// <summary>
@@ -196,26 +251,15 @@ public interface I{projectName}Authorization : ILzAuthorization
 public partial class {projectName}Authorization : LzAuthorization, I{projectName}Authorization
 {{
     
-    public virtual async Task<List<string>> GetUserDefaultPermissionsAsync(string lzUserId, string userName, string table)
-    {{
-        // TODO: generated code here
-        return await Task.FromResult(new List<string>());
-    }}
-
-    public virtual async Task LoadDefaultPermissionsAsync()
-    {{
-        // TODO: generatedcode here
-        await Task.CompletedTask;
-    }}
 }}
 ";
             File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
         }
-        private static void GenerateControllerClass(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, List<string> interfaces, string projectName, string filePath)
+        private static void GenerateBaseClass(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, List<string> interfaces, List<string> dependencies, string projectName, string filePath)
         {
-            AddAbstractModifier(ref root);
+            // AddAbstractModifier(ref root);
 
-            RemoveAsyncFromInterfaceMethodNames(ref root); // Remove Async from interface method names
+            //RemoveAsyncFromInterfaceMethodNames(ref root); // Remove Async from interface method names
 
             InsertPragma(ref root, "1998", "Disable async warning."); // Disable async warning
 
@@ -223,11 +267,15 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
 
             RemoveMember(ref root, "_implementation"); // Remove _implementation field
 
-            InsertControllerBaseClass(ref root); // Inherit from Microsoft.AspNetCore.Mvc.Controller
+            //InsertControllerBaseClass(ref root); // Inherit from Microsoft.AspNetCore.Mvc.Controller
 
             InsertRepoVars(ref root, interfaces);
 
+            // InsertConstructor(ref root, projectName + "ControllerBase", interfaces, dependencies); // Add constructor
+
             MarkMethodsVirtualAsync(ref root); // Make all methods virtual async 
+
+            //MarkInterfaceMethodsAsync(ref root); // Make all interface  methods async
 
             UpdateControllerMethodBodies(ref root, openApiDocument, projectName); // Use x-lz-gencall attributes to generate method bodies   
 
@@ -324,6 +372,33 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
                  .FirstOrDefault();
             root = root.RemoveNodes(new[] { constructor }, SyntaxRemoveOptions.KeepNoTrivia);
         }
+        private static string GetInterfaceCode(CompilationUnitSyntax root) {
+
+            var namespaceName = root
+                ?.DescendantNodes().OfType<NamespaceDeclarationSyntax>()
+                .FirstOrDefault()
+                .Name.ToFullString();
+
+            var interfaceCode = root
+                 ?.DescendantNodes().OfType<InterfaceDeclarationSyntax>()
+                 .FirstOrDefault()
+                 .ToFullString();
+
+            var code = $@"
+namespace {namespaceName} 
+{{
+{interfaceCode}
+}}
+";
+            return ReplaceLineEndings(code);
+        }
+        private static void RemoveInterface(ref CompilationUnitSyntax root)
+        {
+            var interfaceNode = root
+                ?.DescendantNodes().OfType<InterfaceDeclarationSyntax>()
+                .FirstOrDefault();
+            root = root.RemoveNodes(new[] { interfaceNode }, SyntaxRemoveOptions.KeepNoTrivia);
+        }
         private static void RemoveMember(ref CompilationUnitSyntax root, string memberName)
         {
             // First, try to find fields that match the member name
@@ -393,10 +468,10 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
         private static void InsertRepoVars(ref CompilationUnitSyntax root, List<string> interfaces, List<string> dependencies = null)
         {
             var varDeclarations = string.Empty;
-            interfaces.ForEach(x => varDeclarations += $"\r\n\t\tprotected {x} {DownCaseFirstChar(x.Substring(1))};");
+            interfaces.ForEach(x => varDeclarations += $"\r\n\t\tpublic {x} {x.Substring(1)} {{ get; set; }}");
             if(dependencies != null)
-                dependencies.ForEach(x => varDeclarations += $"\r\n\t\tprotected {x};");
-            InsertIntoClass(ref root, varDeclarations);
+                dependencies.ForEach(x => varDeclarations += $"\r\n\t\tpublic {x};");
+            InsertMemberIntoClass(ref root, varDeclarations);
 
         }
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "VSTHRD200:Use \"Async\" suffix for async methods", Justification = "<Pending>")]
@@ -425,39 +500,63 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
 
                 });
         }
-        private static void InsertConstructor(ref CompilationUnitSyntax root, string projectName, List<string> repos)
+        private static void MarkInterfaceMethodsAsync(ref CompilationUnitSyntax root)
+        {
+            root = root.ReplaceNodes(
+                root.DescendantNodes()
+                    .OfType<InterfaceDeclarationSyntax>()
+                    .SelectMany(c => c.DescendantNodes().OfType<MethodDeclarationSyntax>()),
+                (originalMethod, updatedMethod) =>
+                {
+                    // Check if the method already has 'virtual', 'override', 'sealed', 'abstract', or 'static' modifiers.
+                    if (originalMethod.Modifiers.Any(m => m.IsKind(SyntaxKind.AsyncKeyword)))
+                    {
+                        return originalMethod;
+                    }
+
+                    // Add the 'virtual' modifier.
+                    return updatedMethod
+                        .AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword).WithTrailingTrivia(SyntaxFactory.Whitespace(" ")));
+
+                });
+        }
+        private static void InsertConstructor(ref CompilationUnitSyntax root, string constructorName, List<string> interfaces, List<string> dependencies)
         {
 
-            var constArguments = new List<string>();
-            repos.ForEach(x => constArguments.Add($"I{char.ToUpper(x[0]) + x.Substring(1)} {x}"));
+            // Generate constructor arguments of the form "IClassName className"
+            var constructorArguments = new List<string>();
+            interfaces.ForEach(x => constructorArguments.Add($"{x} {DownCaseFirstChar(x.Substring(1))}")); // Iterfaces have the form "IClassName"
+            dependencies.ForEach(x => constructorArguments.Add(x)); // Dependencies have the form "IClassName className"
 
-            var argumentAssignments = new List<string>();
-            repos.ForEach(x => argumentAssignments.Add($"this.{x} = {x};"));
-
-            var varDeclarations = new List<string>();
-            repos.ForEach(x => varDeclarations.Add($"protected I{char.ToUpper(x[0]) + x.Substring(1)} {x};"));
+            var constructorAssignments = new List<string>();
+            interfaces.ForEach(x => constructorAssignments.Add($"{x.Substring(1)} = {DownCaseFirstChar(x.Substring(1))};"));
+            dependencies.ForEach(x =>
+            {
+                var parts = x.Split(' ');
+                if (parts.Length != 2)
+                    throw new Exception($"Invalid dependency: {x}. Missing variable name. Ex: ICICD cicd");
+                var varname = parts[1];
+                constructorAssignments.Add($"this.{varname} = {varname};");
+            });
 
             var code =
 $@"
-        public {projectName}Controller(
-            {string.Join(",\r\t\t\t", constArguments)}
+        public {constructorName}(
+            {string.Join(",\r\n\t\t\t", constructorArguments.Select(x => x))}
             ) 
         {{
-            {string.Join("\r\t\t\t", argumentAssignments)}
+            {string.Join("\r\n\t\t\t", constructorAssignments.Select(x => x))}
+
+            Init();
         }}
-            {string.Join("\r\t\t\t", varDeclarations)}
 ";
-            InsertIntoClass(ref root, code);
+
+            InsertMemberIntoClass(ref root, code);
 
         }
         private static Dictionary<string, Dictionary<string, string>> MethodExtensionsData(OpenApiDocument openApiDocument)
         {
-            //Todo: Need a new process?
             var map = new Dictionary<string, Dictionary<string, string>>();
-            //var endpointkeys = directive.EndPoints
-            //    .Where(x => x.Value.TagName.Equals(projectName, StringComparison.CurrentCultureIgnoreCase))
-            //    .Select(x => x.Key)
-            //    .ToList();
 
             // Use x-* keys for operationId
             foreach (var path in openApiDocument.Paths)
@@ -490,7 +589,7 @@ $@"
                             {
                                 if (extensions.ContainsKey("x-lz-gencall"))
                                 {
-                                    body = $"{indent}var callerInfo = await {DownCaseFirstChar(projectName)}Authorization.GetCallerInfoAsync(this.Request);";
+                                    body = $"{indent}var callerInfo = await {projectName}Authorization.GetCallerInfoAsync(this.Request);";
                                     body += $"\r\n{indent}return await {extensions["x-lz-gencall"]};";
                                 }
                             }
@@ -549,7 +648,7 @@ $@"
             // Replace the old class with the updated class in the syntax tree
             root = root.ReplaceNode(classDeclaration, updatedClass);
         }
-        public static void InsertIntoClass(ref CompilationUnitSyntax root, string textToInsert)
+        public static void InsertMemberIntoClass(ref CompilationUnitSyntax root, string textToInsert)
         {
             // ParseAndAdd the text to insert
             var parsedMembers = SyntaxFactory.ParseCompilationUnit(textToInsert)
@@ -567,7 +666,26 @@ $@"
             // Replace the old class with the updated class in the syntax tree
             root = root.ReplaceNode(classDeclaration, updatedClass);
         }
-        private static void GenerateImplClassGenFile(string projectName, List<string> interfaces, List<string> dependencies, string filePath)
+        public static void InsertMemberIntoInterface(ref CompilationUnitSyntax root, string textToInsert)
+        {
+            // ParseAndAdd the text to insert
+            var parsedMembers = SyntaxFactory.ParseCompilationUnit(textToInsert)
+                                             .DescendantNodes()
+                                             .OfType<MemberDeclarationSyntax>()
+                                             .ToList();
+
+            var interfaceDeclaration = root.DescendantNodes()
+                                       .OfType<InterfaceDeclarationSyntax>()
+                                       .First();
+
+            // Create a new interface with the inserted members
+            var updatedInterface = interfaceDeclaration.AddMembers(parsedMembers.ToArray());
+            var scratch = updatedInterface.ToFullString();
+
+            // Replace the old class with the updated class in the syntax tree
+            root = root.ReplaceNode(interfaceDeclaration, updatedInterface);
+        }
+        private static void GenerateControllerClassFile(string projectName, List<string> interfaces, List<string> dependencies, string filePath)
         {
             // Generate constructor arguments of the form "IClassName className"
             var constructorArguments = new List<string>();
@@ -575,7 +693,7 @@ $@"
             dependencies.ForEach(x => constructorArguments.Add(x)); // Dependencies have the form "IClassName className"
 
             var constructorAssignments = new List<string>();
-            interfaces.ForEach(x => constructorAssignments.Add($"this.{DownCaseFirstChar(x.Substring(1))} = {DownCaseFirstChar(x.Substring(1))};"));
+            interfaces.ForEach(x => constructorAssignments.Add($"{x.Substring(1)} = {DownCaseFirstChar(x.Substring(1))};"));
             dependencies.ForEach(x =>
             {
                 var parts = x.Split(' ');
@@ -585,20 +703,24 @@ $@"
                 constructorAssignments.Add($"this.{varname} = {varname};");
             });
 
+            string varDeclarations = "";
+            interfaces.ForEach(x => varDeclarations += $"\r\n\t\tpublic {x} {x.Substring(1)} {{ get; set; }}");
+            if (dependencies != null)
+                dependencies.ForEach(x => varDeclarations += $"\r\n\t\tpublic {x};");
+
             var classbody = $@"
 //----------------------
 // <auto-generated>
 //     Generated by LazyMagic, do not edit directly. Changes will be overwritten.
 //     Create your own cs file for this partial class and implement any endpoint methods 
 //     not having an x-lz-gencall attribute.
-//     Note that NSWAG is hardcoded to add 'Controller' to the classname.
 // </auto-generated>
 //----------------------
 namespace {projectName}
 {{
-    public partial class {projectName}ControllerImpl : {projectName}Controller
+    public partial class {projectName}Controller : Controller, I{projectName}Controller
     {{
-        public {projectName}ControllerImpl(
+        public {projectName}Controller(
             {string.Join(",\r\n\t\t\t", constructorArguments.Select(x => x))}
             ) 
         {{
@@ -606,9 +728,15 @@ namespace {projectName}
 
             Init();
         }}
+
+{varDeclarations}
+
+        partial void Init();
     }}
 }}
 ";
+
+
             File.WriteAllText(filePath, classbody);
         }
         private static void GenerateServiceRegistrationsClass(string projectName, string nameSpace, List<string> interfaces, string filePath)
@@ -630,7 +758,7 @@ namespace {nameSpace}
         public static IServiceCollection Add{projectName}(this IServiceCollection services) 
         {{
             services.TryAddSingleton<I{projectName}Authorization, {projectName}Authorization>();
-            services.TryAddSingleton<I{projectName}Controller, {projectName}ControllerImpl>();
+            services.TryAddSingleton<I{projectName}Controller, {projectName}Controller>();
             {string.Join("\r\n\t\t\t", registrations.Select(x => x))}
             CustomConfigurations(services);
             return services;            

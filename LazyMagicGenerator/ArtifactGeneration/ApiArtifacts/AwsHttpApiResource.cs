@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.Text;
 using static LazyMagic.LzLogger;
 using static LazyMagic.OpenApiUtils;
+using Amazon.Runtime.Internal;
+using FluentValidation;
 
 namespace LazyMagic
 {
@@ -18,6 +20,8 @@ namespace LazyMagic
     {
         public override string Template { get; set; } = "AwsTemplates/Snippets/sam.service.httpapi.cognito.yaml";
         public string DefinitionBodySnippet { get; set; } = "AwsTemplates/Snippets/sam.service.httpapi.definitionbody.yaml";
+        //public string CognitoHeadersSnippet { get; set; } = "AwsTemplates/Snippets/sam.service.httpapi.cognito.headers.yaml";
+        //public string CognitoHeadersPathSnippet { get; set; } = "AwsTemplates/Snippets/sam.service.httpapi.cognito.headerspath.yaml";
         public string PathSnippet { get; set; } = "AwsTemplates/Snippets/sam.service.httpapi.path.yaml";
         public string CognitoAuthSnippet { get; set; } = "AwsTemplates/Snippets/sam.service.httpapi.cognito.auth.yaml";
         public string ExportedAwsResourceName { get; set; } = null;  
@@ -45,31 +49,40 @@ namespace LazyMagic
                 // Read snippets and generate
                 var templateBuilder = new StringBuilder();
                 templateBuilder
-                    .Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, template)))
-                    .Replace("__TemplateSource__", template);
+                    .Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, template)));
 
-                var definitionBody = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, DefinitionBodySnippet))
-                    .Replace("__TemplateSource__", DefinitionBodySnippet);
+                var definitionBody = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, DefinitionBodySnippet));
                 templateBuilder.Append(definitionBody);
 
-                var pathTemplate = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, PathSnippet))
-                    .Replace("__TemplateSource__", PathSnippet);
+                var pathTemplate = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, PathSnippet));
 
                 templateBuilder.Replace("__ResourceGenerator__", this.GetType().Name);
                 templateBuilder.Replace("__ApiGatewayName__", resourceName);
 
                 var cognitoAuth = "";
-                if(!string.IsNullOrEmpty(cognitoResource))
+                var definitionBodyCognitoHeaders = "";
+                var definitionBodyCognitoHeadersPath = "";
+                if (!string.IsNullOrEmpty(cognitoResource))
                 {
                     cognitoAuth = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CognitoAuthSnippet))
-                        .Replace("__CognitoResource__", cognitoResource);
+                        .Replace("__CognitoResource__", cognitoResource); 
+
+                    //definitionBodyCognitoHeaders = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CognitoHeadersSnippet))
+                    //    .Replace("__CognitoResource__", cognitoResource);
+
+                    //definitionBodyCognitoHeadersPath = File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, CognitoHeadersPathSnippet))
+                    //    .Replace("__CognitoResource__", cognitoResource);
                 }
+
                 templateBuilder.Replace("#CognitoAuth#", cognitoAuth);
+                //templateBuilder.Replace("#CognitoHeaders#", definitionBodyCognitoHeaders);
+                //templateBuilder.Replace("#CognitoHeadersPath#", definitionBodyCognitoHeadersPath);
 
                 var lambdaArtifacts = solution.Directives.GetArtifactsByType<DotNetApiLambdaProject>(directive.Containers);
 
+
                 // Generate Paths and insert into template
-                foreach(var lambdaArtifact in lambdaArtifacts)
+                foreach (var lambdaArtifact in lambdaArtifacts)
                 {
                     var lambda = (DotNetApiLambdaProject)lambdaArtifact;
                     if (string.IsNullOrEmpty(lambda.ExportedOpenApiSpec)) continue;

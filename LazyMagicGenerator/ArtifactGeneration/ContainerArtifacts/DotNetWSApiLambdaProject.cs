@@ -15,7 +15,8 @@ namespace LazyMagic
     {
         #region Properties
         public override string Template { get; set; } = "ProjectTemplates/WSApiLambda";
-       
+        public override string ProjectFilePath { get; set; } = "";
+
         #endregion
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {

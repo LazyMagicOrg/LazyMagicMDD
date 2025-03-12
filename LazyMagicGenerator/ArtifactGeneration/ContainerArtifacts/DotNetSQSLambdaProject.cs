@@ -15,6 +15,7 @@ namespace LazyMagic
     {
         #region Properties
         public override string Template { get; set; } = "ProjectTemplates/SQSLambda";
+        public override string ProjectFilePath { get; set; } = "";
         #endregion
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {

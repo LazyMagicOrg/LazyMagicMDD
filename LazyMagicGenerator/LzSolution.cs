@@ -22,37 +22,49 @@ namespace LazyMagic
     /// </summary>
     public class LzSolution : SolutionBase
     {
+        private string DirectiveFilePath { get; }
+
         public LzSolution(ILogger logger, string solutionRootFolderPath)
         {
             LzLogger.SetLogger(logger);
             SolutionRootFolderPath = solutionRootFolderPath;
+            DirectiveFilePath = Path.Combine(solutionRootFolderPath, "LazyMagic.yaml");
         }
 
         #region Public Methods
 
         public async Task ProcessAsync()
         {
-            Directory.CreateDirectory(Path.Combine(SolutionRootFolderPath,"AWSTemplates","Generated"));
+            var generatedDirectory = Path.Combine(SolutionRootFolderPath, "AWSTemplates", "Generated");
+            Directory.CreateDirectory(generatedDirectory);
+            Directory.GetFiles(generatedDirectory).ToList().ForEach(File.Delete);
+
             await LoadDirectivesFileAsync(); // Reads the Directives from the LazyMagic.yaml file
             Directives.Validate(); // Appies defaults and validates the resulting Directives
             await LoadAggregateSchemas(); // Loads the OpenApi directive files 
             await Directives.ProcessAsync(this); // Processes the Directives
             await LzLogger.InfoAsync("done");
         }
+
+        public async Task TestDirectiveValidation(string directiveFilePath)
+        {
+            await LoadDirectivesFileAsync(directiveFilePath); // Reads the Directives from the LazyMagic.yaml file
+            Directives.Validate(); // Appies defaults and validates the resulting Directives
+        }
         #endregion
 
-
-        public async Task LoadDirectivesFileAsync(string lazyMagicFile = "LazyMagic.yaml")
+        private async Task LoadDirectivesFileAsync(string directiveFilePath = null)
         {
-            if (string.IsNullOrEmpty(lazyMagicFile)) lazyMagicFile = "LazyMagic.yaml";
+            directiveFilePath = directiveFilePath ?? DirectiveFilePath; //set default
+            
             try
             {
                 await LzLogger.InfoAsync("Parsing Directives file");
-                var yaml = File.ReadAllText(Path.Combine(SolutionRootFolderPath, lazyMagicFile));
+                var yaml = File.ReadAllText(directiveFilePath);
                 using (var reader = new StringReader(yaml))
                 {
                     string yamlContent = reader.ReadToEnd();
-                    var deserializer = new DeserializerBuilder()
+                    var deserializer = new DeserializerBuilder() 
                            .WithTypeConverter(new DirectivesPropertyConverter())
                            .WithTypeConverter(new DirectivePropertyConverter())
                            .WithTypeConverter(new ArtifactsPropertyConverter())
@@ -81,7 +93,7 @@ namespace LazyMagic
             #endregion
 
         }
-        public async Task LoadAggregateSchemas()
+        private async Task LoadAggregateSchemas()
         {
             AggregateSchemas = await LoadOpenApiFilesAsync(
                 SolutionRootFolderPath,

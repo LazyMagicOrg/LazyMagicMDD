@@ -1,0 +1,38 @@
+LazyMagicDirectivesVersion: 2.0.0
+
+Directives:
+# Cross cutting directives
+  # SCHEMAS Default
+  SchemaDefault:
+    Type: Schema
+    IsDefault: true # this directive may be referenced by other Schema directives
+    Artifacts:
+      DotNetSchemaProject: # system DTOs classes
+      DotNetRepoProject: # DynamoDB CRUDL methods for DTOs
+
+  # MODULES Default 
+  ModuleDefault:
+    Type: Module
+    IsDefault: true # this directive may be referenced by other Module directives
+    Artifacts:
+      DotNetControllerProject: # methods for each REST path operation
+
+  # # Containers
+  # LzMessagingWebSocketLambda: # Handles websocket CONNECT, DISCONNECT, and MESSAGE events. The only incoming message event is AUTHENTICATE. The only outgoing message is AUTHENTICATED. Note that the WebSocket it self may send DISCONNECT events. 
+  #   Type: Container
+  #   Artifacts:
+  #     DotNetWSApiLambdaProject:
+  #     AwsWSApiLambdaResource:
+  #       Authentications: # unlike HttpApi, we authenticate in the Lambda function
+  #       - ConsumerAuth
+  #       - EmployeeAuth
+  #       WebSocketApi: LzMessagingWebSocketApi # required to send AUTHENTICATED message to client
+
+  LzMessagingApi: # Note the absence of Authentication. AWS WebSockets do not support authentication at the API Gateway level. We do authentication in the Lambda function using an AUTHENTICATE message after connection. Connections not authenticated after a few seconds are disconnected. 
+    Type: Api
+    Containers:
+    - LzMessagingWebSocketLambda
+    Artifacts:
+      AwsWSApiResource: 
+      DotNetWSApiSDKProject:
+  

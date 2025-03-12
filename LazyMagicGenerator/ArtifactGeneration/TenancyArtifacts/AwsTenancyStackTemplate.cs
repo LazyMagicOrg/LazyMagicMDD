@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using static LazyMagic.LzLogger;
 using System.Text;
 using CommandLine;
-using NJsonSchema.CodeGeneration;
 
 namespace LazyMagic
 {
@@ -39,7 +38,7 @@ namespace LazyMagic
             {
                 Tenancy directive = (Tenancy)directiveArg;
 
-                var scriptName = $"Deploy-Tenant-{directive.Key}-Stack.g.ps1";
+                var scriptName = $"Deploy-{directive.Key}-Stack.g.ps1";
 
                 await InfoAsync($"Generating {directive.Key} {templateName}");
                 if (string.IsNullOrEmpty(Template)) Template = null;
@@ -212,7 +211,7 @@ namespace LazyMagic
                 {
                     var appName = $"{webAppDirective.Key}";
                     webAppStackReferences += $@"
-$targetStack = $config.SystemName + ""-webapp-{appName.ToLower()}"" 
+$targetStack = $config.SystemName + ""---webapp-{appName.ToLower()}"" 
 ${appName}StackOutputDict = Get-StackOutputs $targetStack
 Display-OutputDictionary -Dictionary ${appName}StackOutputDict -Title ""storeapp Stack Outputs""
                     ";
