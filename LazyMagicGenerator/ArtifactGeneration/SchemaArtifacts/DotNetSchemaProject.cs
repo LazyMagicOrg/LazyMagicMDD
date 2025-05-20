@@ -145,8 +145,10 @@ namespace LazyMagic
                 foreach (var classDeclaration in classeDeclarations)
                 {
                     var className = classDeclaration.Key;
+                    Directory.CreateDirectory(Path.Combine(targetProjectDir, "DTOs"));
                     GenerateDTO(classDeclaration, nameSpace, Path.Combine(targetProjectDir, "DTOs", $"{className}.g.cs"));
                     GenerateDTOValidator(classDeclaration, nameSpace, Path.Combine(targetProjectDir, "DTOs", $"{className}Validator.g.cs"));
+                    Directory.CreateDirectory(Path.Combine(targetProjectDir, "Models"));
                     GenerateModel(classDeclaration, nameSpace, Path.Combine(targetProjectDir, "Models", $"{className}Model.g.cs"));
                     GenerateModelValidators(classDeclaration, nameSpace, Path.Combine(targetProjectDir, "Models", $"{className}ModelValidator.g.cs"));
                 }
