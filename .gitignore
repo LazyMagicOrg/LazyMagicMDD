@@ -341,6 +341,3 @@ healthchecksdb
 
 # LazyMagic Exported Templates
 ExportedTemplates/*.zip
-
-# Install file
-LazyMagicVsExt.vsix
