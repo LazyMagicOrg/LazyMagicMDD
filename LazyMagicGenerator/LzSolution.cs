@@ -103,6 +103,7 @@ namespace LazyMagic
                     .Distinct()
                     .ToList()
             );
+            AggregateSchemas.Paths.Clear(); // We only want the schemas
         }
 
     }

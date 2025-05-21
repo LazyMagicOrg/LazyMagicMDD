@@ -43,12 +43,17 @@ namespace LazyMagic
 
                 // Set the project name and namespace
                 var nameSpace = projectName;
+
                 await InfoAsync($"Generating {directive.Key} {projectName}");
 
-                var openApiSpecs = directive.OpenApiSpecs ?? new List<string>();
-                var schemas = directive.Schemas;
+                // Note that OpenApiSpec is the aggregated spec across the system
+                // and we need it for NSWAG.
                 var openApiSpec = directive.OpenApiSpec;
                 OpenApiDocument openApiDocument = await ParseOpenApiYamlContent(openApiSpec);
+
+                // These are the OpenApiSpecs associated with the module
+                var openApiSpecs = directive.OpenApiSpecs ?? new List<string>();
+                var schemas = directive.Schemas;
 
                 //  Get artifact dependencies
                 var interfaces = new List<string>() { $"I{projectName}Authorization" };
