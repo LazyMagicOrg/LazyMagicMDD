@@ -12,6 +12,7 @@ using LazyMagic;
 using VSLangProj;
 using System.Windows;
 using System.Linq;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace LazyMagicVsExt
 {
@@ -289,12 +290,15 @@ namespace LazyMagicVsExt
             // This is not an error - we only add the file if it exists
             if (!File.Exists(filePath))
                 return;
-            
+
             // just return if the file is already referenced in solutionFolderProject
             foreach (ProjectItem projectItem in project.ProjectItems)
-                if(projectItem.FileCount == 1)
+                if (projectItem.FileCount == 1)
+                {
+                    if (projectItem.FileNames[1] == null) return;
                     if (projectItem.FileNames[1].Equals(filePath)) // note bizarre ordinal 1 !
                         return;
+                }
 
             project.ProjectItems.AddFromFile(filePath);
 
