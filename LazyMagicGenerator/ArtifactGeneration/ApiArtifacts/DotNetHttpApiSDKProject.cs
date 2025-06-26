@@ -35,7 +35,7 @@ namespace LazyMagic
             {
                 await Task.Delay(0);
                 Api directive = (Api)directiveArg;
-                var apiPrefix = directive.Key;   
+                var apiPath = directive.Key;   
                 // Set the project name and namespace
                 var projectName = directive.Key;
                 projectName += NameSuffix ?? "";    
@@ -97,14 +97,14 @@ namespace LazyMagic
                 File.WriteAllText(Path.Combine(targetProjectDir, "openapi.g.yaml"), openApiSpec);
 
                 OpenApiDocument openApiDocument = await ParseOpenApiYamlContent(openApiSpec);
-                // Add the apiPrefix to each path 
+                // Add the apiPath to each path 
                 var paths = openApiDocument.Paths;
                 // ToList() is necessary here because we are modifying Paths
                 foreach (var path in openApiDocument.Paths.Keys.ToList())
                 {
                     var value = openApiDocument.Paths[path];
                     paths.Remove(path);
-                    paths.Add($"/{apiPrefix}{path}", value);
+                    paths.Add($"/{apiPath}{path}", value);
                 }
 
                 // Generate classes using NSwag 

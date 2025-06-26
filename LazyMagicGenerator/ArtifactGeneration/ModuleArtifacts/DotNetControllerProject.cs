@@ -15,6 +15,7 @@ using NSwag;
 using FluentValidation.Results;
 using System.Text.RegularExpressions;
 using System.Xml.Schema;
+using DotNet.Globbing;
 
 namespace LazyMagic
 {
@@ -29,7 +30,9 @@ namespace LazyMagic
         public override string Template { get; set; } = "ProjectTemplates/Controller";
         public override string OutputFolder { get; set; } = "Modules";
 
-        public string ExportedOpenApiSpec { get; set; } = "";    
+        public string ExportedOpenApiSpec { get; set; } = "";
+
+        public string ControllerLifetime { get; set; } = "Singleton";
 
         #endregion
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
@@ -46,16 +49,54 @@ namespace LazyMagic
 
                 await InfoAsync($"Generating {directive.Key} {projectName}");
 
-                // Note that OpenApiSpec is the aggregated spec across the system
-                // and we need it for NSWAG.
+                // OpenApiSpec contains the paths for this module and 
+                // schema objects for all modules. This allows schemas to be 
+                // easily shared across modules. NSWAG will fail if a path operation
+                // references a schema not in the spec.
                 var openApiSpec = directive.OpenApiSpec;
                 OpenApiDocument openApiDocument = await ParseOpenApiYamlContent(openApiSpec);
 
-                // These are the OpenApiSpecs associated with the module
+                var modulePath = directive.Key.Replace('.','_').Replace('-','_'); // Replace dots and dashes with underscores for C# member name compatibility
+
+                // Here we modify the OpenApi spec paths and operationIds to 
+                // use the Module name as a prefix. This allows modules, with 
+                // similar paths to be used in the same Lambdas.
+                var paths = openApiDocument.Paths;
+                var pathKeys = paths.Keys.ToList();
+                foreach(var path in pathKeys)
+                {
+                    var openApiPathItem = paths[path]; // OpenApiPathItem is a Dictionary<string path, OpenApiOperation operation>
+                    foreach (var operation in openApiPathItem)
+                    {
+                        var opKey = operation.Key.ToString();
+                        var opValue = operation.Value;
+                        var operationId = opValue.OperationId;
+                        if (string.IsNullOrEmpty(operationId))
+                        {
+                            operationId = OpenApiUtils.GenerateOperationId(opKey, path); //ex "get", "/users/{id}" -> "GetUserId"
+                        }
+                        else
+                            operationId = char.ToUpper(operationId[0]) + operationId.Substring(1);
+
+                        operationId = modulePath + operationId; // Prefix the operationId with the module name to avoid conflicts
+                        opValue.OperationId = operationId;
+                    }
+
+                    // Modify the path to include the module name as a prefix
+                    var newModulePath = '/' + modulePath;
+                    if(!path.StartsWith(newModulePath + '/')) {
+                        var newPath = $"{newModulePath}{path}"; // Add the module name as a prefix
+                        paths.Remove(path);
+                        paths.Add(newPath, openApiPathItem); // Add the modified path
+                    }
+                }
+                var openApiDocumentYanl = openApiDocument.ToYaml();
+
+
                 var openApiSpecs = directive.OpenApiSpecs ?? new List<string>();
                 var schemas = directive.Schemas;
 
-                //  Get artifact dependencies
+                //  Get controller dependencies
                 var interfaces = new List<string>() { $"I{projectName}Authorization" };
                 var dependantRepoArtifacts = solution.Directives.GetArtifactsByType<DotNetRepoProject>(schemas);
                 foreach (var dotNetRepoArtifact in dependantRepoArtifacts)
@@ -90,7 +131,7 @@ namespace LazyMagic
 
                // Generate classes using NSwag
                // We only use the NSWAG generated code as a starting point. It is not 
-               // very well suited for generated interface overriding. 
+               // very well suited for generated interface overriding.
                var nswagSettings = new CSharpControllerGeneratorSettings
                {
                    UseActionResultType = true,
@@ -104,14 +145,11 @@ namespace LazyMagic
                 var nswagGenerator = new CSharpControllerGenerator(openApiDocument, nswagSettings);
                 var code = nswagGenerator.GenerateFile();
 
-                // OK, now we start munging the NSWAG generated code
+                // OK, now we start munging the NSWAG generated code with Roslyn
                 var root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
 
                 // We don't need the schema classes so strip them out
                 root = RemoveGeneratedSchemaClasses(root); 
-
-                // We don't need the NSWAG generated interface so strip it out
-                //root = RemoveInterface(root, $"I{projectName}Controller");
 
                 // Clean it up to make it readable.
                 var scratchpad = root.ToFullString();
@@ -135,9 +173,9 @@ namespace LazyMagic
 
                 // Remove the Interface from the compilation unit
                 RemoveInterface(ref root);
-                code = root.ToFullString();
 
                 // Finalize the {projectName}ControllerBase class 
+                code = root.ToFullString();
                 code =
 @"// NSWAG code refactored by LazyMagic.
 // We use NSWAG to generate a baseclass, partial class and interface. 
@@ -158,11 +196,9 @@ namespace LazyMagic
 
                 GenerateBaseClass(ref root, openApiDocument, interfaces, Dependencies, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}ControllerBase") + ".g.cs");
 
-                //GenerateControllerClassFile(projectName, interfaces, Dependencies, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Controller") + ".g.cs"); // This is a partial class containing the constructor with the repo arguments etc.
-
                 GenerateAuthorizationClass(ref root, openApiDocument, projectName, nameSpace, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Authorization") + ".g.cs");
 
-                GenerateServiceRegistrationsClass(projectName, nameSpace, ServiceRegistrations, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Registrations") + ".g.cs"); // This class contains the extension methods to register necesssry services
+                GenerateServiceRegistrationsClass(projectName, nameSpace, ServiceRegistrations, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Registrations") + ".g.cs", ControllerLifetime); // This class contains the extension methods to register necesssry services
 
                 // Write the partial class
                 var classCode =
@@ -179,7 +215,7 @@ public partial class {projectName}Controller : {projectName}ControllerBase {{}}
                 // Exports
                 // Write Modified OpenApi specs to file
                 var exportedOpenApiSpec = Path.Combine(OutputFolder, projectName, "openapi.g.yaml");
-                File.WriteAllText(Path.Combine(solution.SolutionRootFolderPath, exportedOpenApiSpec), openApiSpec);
+                File.WriteAllText(Path.Combine(solution.SolutionRootFolderPath, exportedOpenApiSpec), openApiDocumentYanl);
 
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName) + ".csproj";
                 ExportedServiceRegistrations = new List<string> { $"Add{projectName}" };
@@ -262,25 +298,15 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
         }
         private static void GenerateBaseClass(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, List<string> interfaces, List<string> dependencies, string projectName, string filePath)
         {
-            // AddAbstractModifier(ref root);
-
-            //RemoveAsyncFromInterfaceMethodNames(ref root); // Remove Async from interface method names
-
             InsertPragma(ref root, "1998", "Disable async warning."); // Disable async warning
 
             RemoveConstructor(ref root); // Remove constructor 
 
-            RemoveMember(ref root, "_implementation"); // Remove _implementation field
-
-            //InsertControllerBaseClass(ref root); // Inherit from Microsoft.AspNetCore.Mvc.Controller
+            RemoveMember(ref root, "_implementation"); // Remove _implementation field 
 
             InsertRepoVars(ref root, interfaces);
 
-            // InsertConstructor(ref root, projectName + "ControllerBase", interfaces, dependencies); // Add constructor
-
             MarkMethodsVirtualAsync(ref root); // Make all methods virtual async 
-
-            //MarkInterfaceMethodsAsync(ref root); // Make all interface  methods async
 
             UpdateControllerMethodBodies(ref root, openApiDocument, projectName); // Use x-lz-gencall attributes to generate method bodies   
 
@@ -291,37 +317,6 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
             FixNswagSyntax(code); // NSwag seems to have a _template bug. Microsoft.AspNetCore.Mvc.HttpGET should be Microsoft.AspNetCore.Mvc.HttpGet
 
             File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
-        }
-        private static void AddAbstractModifier(ref CompilationUnitSyntax root)
-        {
-            var targetClass = root.DescendantNodes().OfType<ClassDeclarationSyntax>().FirstOrDefault();
-
-            var updatedModifiers = targetClass.Modifiers.Where(m => !m.IsKind(SyntaxKind.AbstractKeyword)).ToList();
-
-            if (!targetClass.Modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword)))
-            {
-                updatedModifiers.Insert(0, SyntaxFactory.Token(SyntaxKind.PublicKeyword));
-            }
-
-            int publicIndex = updatedModifiers.FindIndex(m => m.IsKind(SyntaxKind.PublicKeyword));
-            updatedModifiers.Insert(publicIndex + 1, SyntaxFactory.Token(SyntaxKind.AbstractKeyword).WithTrailingTrivia(SyntaxFactory.Space));
-
-            var updatedClass = targetClass.WithModifiers(SyntaxFactory.TokenList(updatedModifiers));
-            root = root.ReplaceNode(targetClass, updatedClass);
-
-        }
-        private static void InsertClassAttribute(ref CompilationUnitSyntax root, string attribute)
-        {
-            var targetClass = root.DescendantNodes().OfType<ClassDeclarationSyntax>().FirstOrDefault();
-
-            if (targetClass == null)
-                return;
-
-            var nonControllerAttribute = SyntaxFactory.Attribute(SyntaxFactory.IdentifierName(attribute));
-            var attributeList = SyntaxFactory.AttributeList(SyntaxFactory.SingletonSeparatedList(nonControllerAttribute));
-            var updatedClass = targetClass.AddAttributeLists(attributeList);
-            root = root.ReplaceNode(targetClass, updatedClass);
-
         }
         private static void RemoveAsyncFromInterfaceMethodNames(ref CompilationUnitSyntax root)
         {
@@ -445,31 +440,6 @@ namespace {namespaceName}
                 root = root.RemoveNode(member, SyntaxRemoveOptions.KeepNoTrivia);
             }
         }
-        private static void InsertControllerBaseClass(ref CompilationUnitSyntax root)
-        {
-            root = root.ReplaceNodes(
-                root.DescendantNodes().OfType<ClassDeclarationSyntax>(),
-                (originalClass, updatedClass) =>
-                {
-                    // Create a new simple base class syntax for the specified class.
-                    var baseClassSyntax = SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("Microsoft.AspNetCore.Mvc.Controller"));
-
-                    // Add or update the base class.
-                    var baseList = updatedClass.BaseList;
-
-                    if (baseList == null)
-                        return updatedClass.WithBaseList(SyntaxFactory.BaseList(SyntaxFactory.SingletonSeparatedList<BaseTypeSyntax>(baseClassSyntax)));
-
-                    // If there are already base types (i.e., a base class or interfaces), 
-                    // insert the new base class at the beginning of the list.
-                    var existingBaseTypes = updatedClass.BaseList.Types;
-                    var newBaseTypes = SyntaxFactory.SeparatedList<BaseTypeSyntax>()
-                        .Add(baseClassSyntax)
-                        .AddRange(existingBaseTypes);
-
-                    return updatedClass.WithBaseList(updatedClass.BaseList.WithTypes(newBaseTypes));
-                });
-        }
         private static void InsertRepoVars(ref CompilationUnitSyntax root, List<string> interfaces, List<string> dependencies = null)
         {
             var varDeclarations = string.Empty;
@@ -479,6 +449,7 @@ namespace {namespaceName}
             InsertMemberIntoClass(ref root, varDeclarations);
 
         }
+
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "VSTHRD200:Use \"Async\" suffix for async methods", Justification = "<Pending>")]
         private static void MarkMethodsVirtualAsync(ref CompilationUnitSyntax root)
         {
@@ -501,26 +472,6 @@ namespace {namespaceName}
                     // Add the 'virtual' modifier.
                     return updatedMethod
                         .AddModifiers(SyntaxFactory.Token(SyntaxKind.VirtualKeyword).WithTrailingTrivia(SyntaxFactory.Whitespace(" ")))
-                        .AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword).WithTrailingTrivia(SyntaxFactory.Whitespace(" ")));
-
-                });
-        }
-        private static void MarkInterfaceMethodsAsync(ref CompilationUnitSyntax root)
-        {
-            root = root.ReplaceNodes(
-                root.DescendantNodes()
-                    .OfType<InterfaceDeclarationSyntax>()
-                    .SelectMany(c => c.DescendantNodes().OfType<MethodDeclarationSyntax>()),
-                (originalMethod, updatedMethod) =>
-                {
-                    // Check if the method already has 'virtual', 'override', 'sealed', 'abstract', or 'static' modifiers.
-                    if (originalMethod.Modifiers.Any(m => m.IsKind(SyntaxKind.AsyncKeyword)))
-                    {
-                        return originalMethod;
-                    }
-
-                    // Add the 'virtual' modifier.
-                    return updatedMethod
                         .AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword).WithTrailingTrivia(SyntaxFactory.Whitespace(" ")));
 
                 });
@@ -581,6 +532,8 @@ $@"
         {
             var methodExtensions = MethodExtensionsData(openApiDocument); // Dictionary<operationId, Dictionary<extensionKey, extensionValue>>   
 
+            var code = root.ToFullString();
+            var yaml = openApiDocument.ToYaml();
             root = root.ReplaceNodes(
                 root.DescendantNodes()
                     .OfType<ClassDeclarationSyntax>()
@@ -590,7 +543,7 @@ $@"
                             string body = string.Empty;
                             string indent = "            ";
                             var methodName = originalMethod.Identifier.Text;
-                            if (methodExtensions.TryGetValue(DownCaseFirstChar(methodName), out var extensions))
+                            if (methodExtensions.TryGetValue(methodName, out var extensions))
                             {
                                 if (extensions.ContainsKey("x-lz-gencall"))
                                 {
@@ -611,6 +564,7 @@ $@"
                                 .OfType<BlockSyntax>().First();
                             return updatedMethod.WithBody(newBodySyntax);
                         });
+            code = root.ToFullString();
         }
         private static string FixNswagSyntax(string code)
         {
@@ -620,12 +574,6 @@ $@"
             code = code.Replace("Microsoft.AspNetCore.Mvc.HttpUPDATE", "Microsoft.AspNetCore.Mvc.HttpUpdate");
             code = code.Replace("Microsoft.AspNetCore.Mvc.HttpDELETE", "Microsoft.AspNetCore.Mvc.HttpDelete");
             return code;
-        }
-        private static string UpCaseFirstChar(string token)
-        {
-            if (string.IsNullOrEmpty(token))
-                return token;
-            return token.Substring(0, 1).ToUpper() + token.Substring(1);
         }
         private static string DownCaseFirstChar(string token)
         {
@@ -690,6 +638,69 @@ $@"
             // Replace the old class with the updated class in the syntax tree
             root = root.ReplaceNode(interfaceDeclaration, updatedInterface);
         }
+        private static void GenerateServiceRegistrationsClass(string projectName, string nameSpace, List<string> interfaces, string filePath, string controllerLifetime)
+        {
+            var registrations = new List<string>();
+            interfaces.ForEach(x => registrations.Add($"services.{x}();")); 
+
+            var classbody = $@"
+//----------------------
+// <auto-generated>
+//     Generated by LazyMagic, do not edit directly. Changes will be overwritten.
+//     Implement another class for registrations not directly generated by LazyMagic.
+// </auto-generated>
+//----------------------
+namespace {nameSpace}
+{{
+    public static partial class {projectName}Registrations 
+    {{
+        public static IServiceCollection Add{projectName}(this IServiceCollection services) 
+        {{
+            services.TryAddSingleton<I{projectName}Authorization, {projectName}Authorization>();
+            services.TryAdd{controllerLifetime}<I{projectName}Controller, {projectName}Controller>();
+            {string.Join("\r\n\t\t\t", registrations.Select(x => x))}
+            CustomConfigurations(services);
+            return services;            
+        }}
+        static partial void CustomConfigurations(IServiceCollection sdervices);
+    }}
+}}
+";
+            File.WriteAllText(filePath, classbody);
+        }
+
+        /* Currently unused Methods */
+        private static void AddAbstractModifier(ref CompilationUnitSyntax root)
+        {
+            var targetClass = root.DescendantNodes().OfType<ClassDeclarationSyntax>().FirstOrDefault();
+
+            var updatedModifiers = targetClass.Modifiers.Where(m => !m.IsKind(SyntaxKind.AbstractKeyword)).ToList();
+
+            if (!targetClass.Modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword)))
+            {
+                updatedModifiers.Insert(0, SyntaxFactory.Token(SyntaxKind.PublicKeyword));
+            }
+
+            int publicIndex = updatedModifiers.FindIndex(m => m.IsKind(SyntaxKind.PublicKeyword));
+            updatedModifiers.Insert(publicIndex + 1, SyntaxFactory.Token(SyntaxKind.AbstractKeyword).WithTrailingTrivia(SyntaxFactory.Space));
+
+            var updatedClass = targetClass.WithModifiers(SyntaxFactory.TokenList(updatedModifiers));
+            root = root.ReplaceNode(targetClass, updatedClass);
+
+        }
+        private static void InsertClassAttribute(ref CompilationUnitSyntax root, string attribute)
+        {
+            var targetClass = root.DescendantNodes().OfType<ClassDeclarationSyntax>().FirstOrDefault();
+
+            if (targetClass == null)
+                return;
+
+            var nonControllerAttribute = SyntaxFactory.Attribute(SyntaxFactory.IdentifierName(attribute));
+            var attributeList = SyntaxFactory.AttributeList(SyntaxFactory.SingletonSeparatedList(nonControllerAttribute));
+            var updatedClass = targetClass.AddAttributeLists(attributeList);
+            root = root.ReplaceNode(targetClass, updatedClass);
+
+        }
         private static void GenerateControllerClassFile(string projectName, List<string> interfaces, List<string> dependencies, string filePath)
         {
             // Generate constructor arguments of the form "IClassName className"
@@ -744,35 +755,57 @@ namespace {projectName}
 
             File.WriteAllText(filePath, classbody);
         }
-        private static void GenerateServiceRegistrationsClass(string projectName, string nameSpace, List<string> interfaces, string filePath)
+        private static string UpCaseFirstChar(string token)
         {
-            var registrations = new List<string>();
-            interfaces.ForEach(x => registrations.Add($"services.{x}();")); 
-
-            var classbody = $@"
-//----------------------
-// <auto-generated>
-//     Generated by LazyMagic, do not edit directly. Changes will be overwritten.
-//     Implement another class for registrations not directly generated by LazyMagic.
-// </auto-generated>
-//----------------------
-namespace {nameSpace}
-{{
-    public static partial class {projectName}Registrations 
-    {{
-        public static IServiceCollection Add{projectName}(this IServiceCollection services) 
-        {{
-            services.TryAddSingleton<I{projectName}Authorization, {projectName}Authorization>();
-            services.TryAddSingleton<I{projectName}Controller, {projectName}Controller>();
-            {string.Join("\r\n\t\t\t", registrations.Select(x => x))}
-            CustomConfigurations(services);
-            return services;            
-        }}
-        static partial void CustomConfigurations(IServiceCollection sdervices);
-    }}
-}}
-";
-            File.WriteAllText(filePath, classbody);
+            if (string.IsNullOrEmpty(token))
+                return token;
+            return token.Substring(0, 1).ToUpper() + token.Substring(1);
         }
+        private static void MarkInterfaceMethodsAsync(ref CompilationUnitSyntax root)
+        {
+            root = root.ReplaceNodes(
+                root.DescendantNodes()
+                    .OfType<InterfaceDeclarationSyntax>()
+                    .SelectMany(c => c.DescendantNodes().OfType<MethodDeclarationSyntax>()),
+                (originalMethod, updatedMethod) =>
+                {
+                    // Check if the method already has 'virtual', 'override', 'sealed', 'abstract', or 'static' modifiers.
+                    if (originalMethod.Modifiers.Any(m => m.IsKind(SyntaxKind.AsyncKeyword)))
+                    {
+                        return originalMethod;
+                    }
+
+                    // Add the 'virtual' modifier.
+                    return updatedMethod
+                        .AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword).WithTrailingTrivia(SyntaxFactory.Whitespace(" ")));
+
+                });
+        }
+        private static void InsertControllerBaseClass(ref CompilationUnitSyntax root)
+        {
+            root = root.ReplaceNodes(
+                root.DescendantNodes().OfType<ClassDeclarationSyntax>(),
+                (originalClass, updatedClass) =>
+                {
+                    // Create a new simple base class syntax for the specified class.
+                    var baseClassSyntax = SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("Microsoft.AspNetCore.Mvc.Controller"));
+
+                    // Add or update the base class.
+                    var baseList = updatedClass.BaseList;
+
+                    if (baseList == null)
+                        return updatedClass.WithBaseList(SyntaxFactory.BaseList(SyntaxFactory.SingletonSeparatedList<BaseTypeSyntax>(baseClassSyntax)));
+
+                    // If there are already base types (i.e., a base class or interfaces), 
+                    // insert the new base class at the beginning of the list.
+                    var existingBaseTypes = updatedClass.BaseList.Types;
+                    var newBaseTypes = SyntaxFactory.SeparatedList<BaseTypeSyntax>()
+                        .Add(baseClassSyntax)
+                        .AddRange(existingBaseTypes);
+
+                    return updatedClass.WithBaseList(updatedClass.BaseList.WithTypes(newBaseTypes));
+                });
+        }
+
     }
 }

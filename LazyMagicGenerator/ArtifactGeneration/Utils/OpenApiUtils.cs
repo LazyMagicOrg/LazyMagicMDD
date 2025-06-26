@@ -1,20 +1,21 @@
 ﻿using LazyMagic;
-using Newtonsoft.Json.Linq;
+using Microsoft.AspNetCore.Routing;
 using Newtonsoft.Json;
-using NSwag;
+using Newtonsoft.Json.Linq;
 using NJsonSchema;
+using NSwag;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using YamlDotNet.Serialization;
-using static LazyMagic.LzLogger;
-using static LazyMagic.YamlUtil;
-using static LazyMagic.OSUtils;
-using YamlDotNet.Serialization.NamingConventions;
 using YamlDotNet.RepresentationModel;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+using static LazyMagic.LzLogger;
+using static LazyMagic.OSUtils;
+using static LazyMagic.YamlUtil;
 
 
 namespace LazyMagic
@@ -301,8 +302,29 @@ namespace LazyMagic
             }
         }
 
+        public static string GenerateOperationId(string op, string path)
+        {
+            if (op == null || path == null) return "";
+            op = op.ToLower(); // Normalize operation to lowercase
+            op = char.ToUpper(op[0]) + op.Substring(1); // Capitalize first letter of operation
 
+            // /yada/bada/{id} -> YadaBadaId
 
+            // Remove leading/trailing slashes and split by '/'
+            var parts = path.Trim('/').Split('/');
+
+            // Convert each part to proper case and concatenate
+            op = op + string.Concat(parts.Select(part =>
+            {
+                // Remove curly braces if present
+                part = part.Trim('{', '}');
+
+                // Convert to proper case
+                return string.IsNullOrEmpty(part) ? "" :
+                    char.ToUpper(part[0]) + part.Substring(1).ToLower();
+            }));
+
+           return op.Replace('.', '_').Replace('-','_'); // Replace charaters that are not valid in C# identifiers
+        }
     }
-
 }

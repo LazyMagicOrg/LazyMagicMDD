@@ -30,8 +30,8 @@ namespace LazyMagic
         public override string Template { get; set; } = "ProjectTemplates/Repo";
         public override string OutputFolder { get; set; } = "Schemas";
         public List<string> ExportedEntities { get; set; } = new List<string>();
+        public string RepoLifetime { get; set; } = "Transient";
         #endregion
-
         /// <summary>
         /// This process generates a repo project from an OpenApi document.
         /// In general, any files from the propsfilecontent project will be copied to the 
@@ -162,7 +162,7 @@ namespace LazyMagic
                 }
 
                 // Generate Service Registrations class
-                GenerateServiceRegistrations(classes, ServiceRegistrations, nameSpace, projectName, Path.Combine(targetProjectDir, "ServiceRepoExtensions.g.cs"));
+                GenerateServiceRegistrations(classes, ServiceRegistrations, nameSpace, projectName, Path.Combine(targetProjectDir, "ServiceRepoExtensions.g.cs"), RepoLifetime);
 
                 // Exports
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName) + ".csproj";
@@ -177,14 +177,14 @@ namespace LazyMagic
                 throw new Exception($"Error generating {GetType().Name} {ex.Message}", ex);   
             }
         }
-        private static void GenerateServiceRegistrations(List<string> repos, List<string> services, string nameSpace, string projectName, string filePath)
+        private static void GenerateServiceRegistrations(List<string> repos, List<string> services, string nameSpace, string projectName, string filePath, string repoLifetime)
         {
             var repoRegistrations = $@"
         services.TryAddAWSService<Amazon.DynamoDBv2.IAmazonDynamoDB>();
 "; 
 
             foreach (var repo in repos)
-                repoRegistrations += $"\t\tservices.TryAddSingleton<I{repo}, {repo}>();\r\n";
+                repoRegistrations += $"\t\tservices.TryAdd{repoLifetime}<I{repo}, {repo}>();\r\n";
 
             var serviceRegistrations = "";
             foreach(var service in services)
@@ -207,9 +207,9 @@ public static partial class {projectName}Extensions
 {{
     public static IServiceCollection Add{projectName}(this IServiceCollection services)
     {{
+        AddCustom(services);    
 {repoRegistrations}
 {serviceRegistrations}
-        AddCustom(services);    
         return services;
     }}
     // Implement this partial method in a separate file to add custom service registrations

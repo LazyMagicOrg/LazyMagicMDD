@@ -155,6 +155,7 @@ namespace LazyMagic
                     solution.SolutionRootFolderPath,
                     new List<string> { openApiSpecsYaml, solution.AggregateSchemas.ToYaml() }
                     );
+                // openApiSpecsYaml contains the paths for this module and schema definitions for all modules.
                 module.OpenApiSpec = openApiSpecsYaml;
                 // Get a list of the entities referenced in the paths
                 var schemaEntities = GetReferencedEntities(openApiSpecsYaml);
