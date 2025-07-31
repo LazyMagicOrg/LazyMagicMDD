@@ -239,14 +239,14 @@ namespace LazyMagic
                 root.RemoveNodes(enumDecls, SyntaxRemoveOptions.KeepNoTrivia));
 
 
-            // Remove any classes in the namedClasses list
+            // Remove all remaining classes EXCEPT those in the namedClasses exclusion list
             if (namedClasses != null)
             {
                 classDecls = root
                     .DescendantNodes().OfType<NamespaceDeclarationSyntax>()
                     .First()
                         ?.DescendantNodes().OfType<ClassDeclarationSyntax>()
-                        .Where(x => namedClasses.Contains(x.Identifier.ValueText.ToString()))
+                        .Where(x => !namedClasses.Contains(x.Identifier.ValueText.ToString()))
                         .ToList();
                 root = root.ReplaceNode(root,
                     root.RemoveNodes(classDecls, SyntaxRemoveOptions.KeepNoTrivia));

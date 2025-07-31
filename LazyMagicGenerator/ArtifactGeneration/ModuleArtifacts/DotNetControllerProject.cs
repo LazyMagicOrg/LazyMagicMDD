@@ -31,6 +31,8 @@ namespace LazyMagic
         public override string OutputFolder { get; set; } = "Modules";
 
         public string ExportedOpenApiSpec { get; set; } = "";
+        public string ExportedClientInterface { get; set; } = "";
+        public string ExportedClientInterfaceName { get; set; } = "";
 
         public string ControllerLifetime { get; set; } = "Singleton";
 
@@ -79,6 +81,13 @@ namespace LazyMagic
                             operationId = char.ToUpper(operationId[0]) + operationId.Substring(1);
 
                         operationId = modulePath + operationId; // Prefix the operationId with the module name to avoid conflicts
+                        
+                        // Append "Async" suffix if not already present to match generated method names
+                        if (!operationId.EndsWith("Async"))
+                        {
+                            operationId += "Async";
+                        }
+                        
                         opValue.OperationId = operationId;
                     }
 
@@ -167,9 +176,11 @@ namespace LazyMagic
                 root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
 
                 // Extract and save the Interface file
-                RemoveAsyncFromInterfaceMethodNames(ref root);
+                // RemoveAsyncFromInterfaceMethodNames(ref root); // Removed to keep Async suffix for proper inheritance with client SDK
                 var interfaceCode = GetInterfaceCode(root);
                 File.WriteAllText(Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"I{projectName}Controller") + ".g.cs", interfaceCode);
+
+                // Client interface generation moved to DotNetHttpApiSDKProject
 
                 // Remove the Interface from the compilation unit
                 RemoveInterface(ref root);
@@ -223,6 +234,8 @@ public partial class {projectName}Controller : {projectName}ControllerBase {{}}
                 ExportedGlobalUsings.Add(nameSpace);
                 ExportedOpenApiSpecs = openApiSpecs;
                 ExportedOpenApiSpec = exportedOpenApiSpec;
+                ExportedClientInterface = Path.Combine(OutputFolder, projectName, $"I{projectName}Client.g.cs");
+                ExportedClientInterfaceName = $"I{projectName}Client";
                 foreach (var path in openApiDocument.Paths)
                     ExportedPathOps.Add((path.Key, path.Value.Keys.ToList()));
 
@@ -305,6 +318,8 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
             RemoveMember(ref root, "_implementation"); // Remove _implementation field 
 
             InsertRepoVars(ref root, interfaces);
+
+            EnsureMethodsHaveAsyncSuffix(ref root); // Ensure all methods have Async suffix to match interface
 
             MarkMethodsVirtualAsync(ref root); // Make all methods virtual async 
 
@@ -392,6 +407,8 @@ namespace {namespaceName}
 ";
             return ReplaceLineEndings(code);
         }
+
+        // Client interface generation methods moved to DotNetHttpApiSDKProject
         private static void RemoveInterface(ref CompilationUnitSyntax root)
         {
             var interfaceNode = root
@@ -448,6 +465,24 @@ namespace {namespaceName}
                 dependencies.ForEach(x => varDeclarations += $"\r\n\t\tpublic {x};");
             InsertMemberIntoClass(ref root, varDeclarations);
 
+        }
+
+        private static void EnsureMethodsHaveAsyncSuffix(ref CompilationUnitSyntax root)
+        {
+            root = root.ReplaceNodes(
+                root.DescendantNodes()
+                    .OfType<ClassDeclarationSyntax>()
+                    .SelectMany(c => c.DescendantNodes().OfType<MethodDeclarationSyntax>()),
+                (originalMethod, updatedMethod) =>
+                {
+                    var originalName = originalMethod.Identifier.Text;
+                    if (!originalName.EndsWith("Async"))
+                    {
+                        var newName = originalName + "Async";
+                        return updatedMethod.WithIdentifier(SyntaxFactory.Identifier(newName));
+                    }
+                    return originalMethod;
+                });
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "VSTHRD200:Use \"Async\" suffix for async methods", Justification = "<Pending>")]

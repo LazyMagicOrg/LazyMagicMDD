@@ -10,6 +10,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{6B3576B2-110D-4823-8699-5E48B4917F45}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
+		CLAUDE.md = CLAUDE.md
 		CommonPackageHandling.targets = CommonPackageHandling.targets
 		Directory.Packages.props = Directory.Packages.props
 		LazyMagicVsExt.vsix = LazyMagicVsExt.vsix
