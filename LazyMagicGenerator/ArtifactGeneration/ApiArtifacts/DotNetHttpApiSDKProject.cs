@@ -56,19 +56,27 @@ namespace LazyMagic
                 var controllers = GetModulesForApi(directive, solution.Directives);
                 var schemas = GetSchemasForApi(directive, solution.Directives);
 
-                // Get Artificat Depenencies
+                // Get Artifact Dependencies
                 var controllerArtifacts = solution.Directives.GetArtifactsByType<DotNetControllerProject>(controllers).ToList<ArtifactBase>();
                 var schemaArtifacts = solution.Directives.GetArtifactsByType<DotNetSchemaProject>(schemas).ToList<ArtifactBase>();
 
-                // Get Dependencies - only schema projects, not controller modules (since client interfaces are now generated locally)
+                // Get Dependencies
                 ProjectReferences.AddRange(GetExportedProjectReferences(schemaArtifacts));
-                // ProjectReferences.AddRange(GetExportedProjectReferences(controllerArtifacts)); // Removed - client interfaces now generated in SDK
-
+                
                 PackageReferences.AddRange(GetExportedPackageReferences(controllerArtifacts));
                 PackageReferences = PackageReferences.Distinct().ToList();
 
                 GlobalUsings.AddRange(GetExportedGlobalUsings(schemaArtifacts));
-                // GlobalUsings.AddRange(GetExportedGlobalUsings(controllerArtifacts)); // Removed - client SDKs don't need module/repo usings
+                
+                // Include client interface namespaces
+                foreach (var controllerArtifact in controllerArtifacts)
+                {
+                    var controller = controllerArtifact as DotNetControllerProject;
+                    if (controller?.ExportedGlobalUsings != null)
+                    {
+                        GlobalUsings.AddRange(controller.ExportedGlobalUsings);
+                    }
+                }
                 GlobalUsings = GlobalUsings.Distinct().ToList();
 
                 ServiceRegistrations.AddRange(GetExportedServiceRegistrations(schemaArtifacts));
@@ -143,6 +151,9 @@ namespace LazyMagic
 
                 GenerateClientSDKClass(code, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, projectName + ".g.cs"), moduleNames.ToList());
 
+                // Generate module client interfaces from OpenAPI document
+                await GenerateModuleClientInterfacesFromOpenApi(openApiDocument, projectName, targetProjectDir, moduleNames.ToList());
+
                 // Exports
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName + ".csproj");
             } catch (Exception ex)
@@ -156,11 +167,6 @@ namespace LazyMagic
             var root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
             root = RemoveGeneratedSchemaClasses(root, new List<string> { "ApiException", projectName }); // preserve ApiException and client class
             
-            // Store the original interface to extract methods for module interfaces
-            var originalInterface = root
-                ?.DescendantNodes().OfType<InterfaceDeclarationSyntax>()
-                .FirstOrDefault();
-            
             // Remove the NSWAG-generated interface (we'll create our own)
             RemoveInterface(ref root);
             
@@ -168,12 +174,6 @@ namespace LazyMagic
             File.WriteAllText(filePath, root.ToFullString());
             
             var directory = Path.GetDirectoryName(filePath);
-            
-            // Generate individual module client interfaces
-            if (originalInterface != null && moduleNames != null && moduleNames.Any())
-            {
-                GenerateModuleClientInterfaces(originalInterface, moduleNames, directory, projectName);
-            }
             
             // Generate and write our custom interface that inherits from module interfaces
             var interfaceCode = GenerateAggregateInterface(projectName, moduleNames);
@@ -219,90 +219,112 @@ namespace {projectName}
 }}";
         }
 
-        private void GenerateModuleClientInterfaces(InterfaceDeclarationSyntax originalInterface, List<string> moduleNames, string directory, string projectName)
+        private async Task GenerateModuleClientInterfacesFromOpenApi(OpenApiDocument openApiDocument, string projectName, string targetDirectory, List<string> moduleNames)
         {
-            // Get the namespace from the original interface
-            var namespaceName = originalInterface.Ancestors()
-                .OfType<NamespaceDeclarationSyntax>()
-                .FirstOrDefault()?.Name.ToString() ?? projectName;
+            if (moduleNames == null || !moduleNames.Any())
+                return;
 
-            // Extract all methods from the original interface
-            var allMethods = originalInterface.Members
-                .OfType<MethodDeclarationSyntax>()
-                .ToList();
-
-            // Generate a client interface for each module
-            foreach (var moduleName in moduleNames)
+            // Group operations by module
+            var moduleOperations = new Dictionary<string, List<(string path, string method, NSwag.OpenApiOperation operation)>>();
+            
+            foreach (var path in openApiDocument.Paths)
             {
-                // Filter methods that belong to this module (prefix match)
-                var moduleMethods = allMethods
-                    .Where(m => m.Identifier.ToString().StartsWith($"{moduleName}"))
-                    .ToList();
-
-                if (moduleMethods.Any())
+                foreach (var operation in path.Value)
                 {
-                    var clientInterfaceCode = GenerateModuleClientInterface(moduleName, moduleMethods, namespaceName);
-                    var moduleInterfaceFilePath = Path.Combine(directory, $"I{moduleName}Client.g.cs");
-                    File.WriteAllText(moduleInterfaceFilePath, clientInterfaceCode);
+                    var operationId = operation.Value.OperationId;
+                    if (string.IsNullOrEmpty(operationId))
+                        continue;
+                    
+                    // Find which module this operation belongs to
+                    var module = moduleNames.FirstOrDefault(m => operationId.StartsWith(m));
+                    if (module != null)
+                    {
+                        if (!moduleOperations.ContainsKey(module))
+                            moduleOperations[module] = new List<(string, string, NSwag.OpenApiOperation)>();
+                        
+                        moduleOperations[module].Add((path.Key, operation.Key, operation.Value));
+                    }
                 }
+            }
+
+            // Generate interface for each module
+            foreach (var kvp in moduleOperations)
+            {
+                var moduleName = kvp.Key;
+                var operations = kvp.Value;
+                
+                var interfaceCode = GenerateModuleInterfaceFromOperations(moduleName, projectName, operations);
+                var interfaceFilePath = Path.Combine(targetDirectory, $"I{moduleName}Client.g.cs");
+                File.WriteAllText(interfaceFilePath, interfaceCode);
             }
         }
 
-        private string GenerateModuleClientInterface(string moduleName, List<MethodDeclarationSyntax> methods, string namespaceName)
+        private string GenerateModuleInterfaceFromOperations(string moduleName, string namespaceName, 
+            List<(string path, string method, NSwag.OpenApiOperation operation)> operations)
         {
             var methodDeclarations = new List<string>();
-            
-            foreach (var method in methods)
-            {
-                var returnType = method.ReturnType.ToString();
-                var transformedReturnType = TransformReturnTypeForClient(returnType);
-                var methodName = method.Identifier.ToString();
-                
-                // Get parameters
-                var parameters = method.ParameterList.Parameters
-                    .Select(p => $"{p.Type} {p.Identifier}")
-                    .ToList();
-                var parameterList = string.Join(", ", parameters);
-                
-                // Get XML documentation if present
-                var xmlDoc = method.GetLeadingTrivia()
-                    .Where(t => t.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia) || 
-                               t.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
-                    .Select(t => t.ToString())
-                    .FirstOrDefault();
+            var processedMethods = new HashSet<string>();
 
-                if (!string.IsNullOrEmpty(xmlDoc))
+            foreach (var (path, method, operation) in operations)
+            {
+                var operationId = operation.OperationId;
+                
+                // Skip if we've already processed this method (for overloads)
+                if (processedMethods.Contains(operationId))
+                    continue;
+                
+                processedMethods.Add(operationId);
+
+                // Generate XML documentation
+                if (!string.IsNullOrEmpty(operation.Summary))
                 {
-                    // Clean up and properly format the XML documentation
-                    var docLines = xmlDoc.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                    foreach (var line in docLines)
+                    methodDeclarations.Add($"        /// <summary>");
+                    methodDeclarations.Add($"        /// {operation.Summary}");
+                    methodDeclarations.Add($"        /// </summary>");
+                }
+
+                if (!string.IsNullOrEmpty(operation.Description))
+                {
+                    methodDeclarations.Add($"        /// <remarks>");
+                    var descLines = operation.Description.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in descLines)
                     {
-                        var trimmedLine = line.Trim();
-                        if (!string.IsNullOrEmpty(trimmedLine))
-                        {
-                            // Ensure proper indentation and comment prefix
-                            if (trimmedLine.StartsWith("///"))
-                            {
-                                methodDeclarations.Add($"        {trimmedLine}");
-                            }
-                            else if (trimmedLine.StartsWith("//"))
-                            {
-                                methodDeclarations.Add($"        {trimmedLine}");
-                            }
-                            else
-                            {
-                                // Add the /// prefix if missing
-                                methodDeclarations.Add($"        /// {trimmedLine}");
-                            }
-                        }
+                        methodDeclarations.Add($"        /// {line}");
+                    }
+                    methodDeclarations.Add($"        /// </remarks>");
+                }
+
+                // Add parameter documentation
+                foreach (var parameter in operation.Parameters)
+                {
+                    if (!string.IsNullOrEmpty(parameter.Description))
+                    {
+                        methodDeclarations.Add($"        /// <param name=\"{parameter.Name}\">{parameter.Description}</param>");
                     }
                 }
+
+                // Add return documentation
+                var successResponse = operation.Responses.FirstOrDefault(r => r.Key.StartsWith("2"));
+                if (successResponse.Value != null && !string.IsNullOrEmpty(successResponse.Value.Description))
+                {
+                    methodDeclarations.Add($"        /// <returns>{successResponse.Value.Description}</returns>");
+                }
+
+                // Generate method signatures (with and without cancellation token)
+                var returnType = GetReturnTypeFromOperation(operation);
+                var parameters = GetParametersFromOperation(operation);
                 
-                methodDeclarations.Add($"        {transformedReturnType} {methodName}({parameterList});");
-                methodDeclarations.Add(""); // Empty line between methods
+                // Method without cancellation token
+                methodDeclarations.Add($"        {returnType} {operationId}({string.Join(", ", parameters)});");
+                methodDeclarations.Add("");
+                
+                // Method with cancellation token
+                var paramsWithCancellation = parameters.ToList();
+                paramsWithCancellation.Add("System.Threading.CancellationToken cancellationToken");
+                methodDeclarations.Add($"        {returnType} {operationId}({string.Join(", ", paramsWithCancellation)});");
+                methodDeclarations.Add("");
             }
 
-            // Remove the last empty line
             if (methodDeclarations.Any() && string.IsNullOrEmpty(methodDeclarations.Last()))
             {
                 methodDeclarations.RemoveAt(methodDeclarations.Count - 1);
@@ -313,7 +335,6 @@ namespace {projectName}
             return $@"//----------------------
 // <auto-generated>
 //     Generated by LazyMagic, do not edit directly. Changes will be overwritten.
-//     This is the client interface version with client-appropriate return types.
 // </auto-generated>
 //----------------------
 
@@ -327,24 +348,188 @@ namespace {namespaceName}
 ";
         }
 
-        private static string TransformReturnTypeForClient(string originalReturnType)
+        private string GetReturnTypeFromOperation(NSwag.OpenApiOperation operation)
         {
-            // Task<ActionResult<T>> -> Task<T>
-            if (originalReturnType.StartsWith("Task<ActionResult<") && originalReturnType.EndsWith(">>"))
+            var successResponse = operation.Responses.FirstOrDefault(r => r.Key.StartsWith("2"));
+            if (successResponse.Value?.Schema != null)
             {
-                var innerType = originalReturnType.Substring("Task<ActionResult<".Length);
-                innerType = innerType.Substring(0, innerType.Length - 2); // Remove >>
-                return $"Task<{innerType}>";
+                var schema = successResponse.Value.Schema;
+                var typeName = GetTypeNameFromSchema(schema);
+                
+                if (schema.Type == NJsonSchema.JsonObjectType.Array && schema.Item != null)
+                {
+                    var itemType = GetTypeNameFromSchema(schema.Item);
+                    return $"System.Threading.Tasks.Task<System.Collections.Generic.ICollection<{itemType}>>";
+                }
+                else if (!string.IsNullOrEmpty(typeName) && typeName != "void")
+                {
+                    return $"System.Threading.Tasks.Task<{typeName}>";
+                }
             }
             
-            // Task<IActionResult> -> Task
-            if (originalReturnType == "Task<IActionResult>")
+            return "System.Threading.Tasks.Task";
+        }
+
+        private string GetTypeNameFromSchema(NJsonSchema.JsonSchema schema)
+        {
+            if (schema.Reference != null)
             {
-                return "Task";
+                return schema.Reference.Id;
             }
             
-            // Keep other types unchanged
-            return originalReturnType;
+            switch (schema.Type)
+            {
+                case NJsonSchema.JsonObjectType.String:
+                    return "string";
+                case NJsonSchema.JsonObjectType.Integer:
+                    return schema.Format == "int64" ? "long" : "int";
+                case NJsonSchema.JsonObjectType.Number:
+                    return schema.Format == "float" ? "float" : "double";
+                case NJsonSchema.JsonObjectType.Boolean:
+                    return "bool";
+                case NJsonSchema.JsonObjectType.Array:
+                    if (schema.Item != null)
+                    {
+                        var itemType = GetTypeNameFromSchema(schema.Item);
+                        return $"System.Collections.Generic.ICollection<{itemType}>";
+                    }
+                    return "System.Collections.Generic.ICollection<object>";
+                default:
+                    return "object";
+            }
+        }
+
+        private List<string> GetParametersFromOperation(NSwag.OpenApiOperation operation)
+        {
+            var parameters = new List<string>();
+            
+            // Add request body parameter if present
+            if (operation.RequestBody != null)
+            {
+                var bodySchema = operation.RequestBody.Content?.FirstOrDefault().Value?.Schema;
+                if (bodySchema != null)
+                {
+                    var typeName = GetTypeNameFromSchema(bodySchema);
+                    parameters.Add($"{typeName} body");
+                }
+            }
+            
+            // Add other parameters
+            foreach (var parameter in operation.Parameters.OrderBy(p => p.IsRequired ? 0 : 1))
+            {
+                var typeName = GetTypeNameFromSchema(parameter.Schema);
+                var paramName = parameter.Name;
+                
+                if (!parameter.IsRequired)
+                {
+                    parameters.Add($"{typeName} {paramName} = null");
+                }
+                else
+                {
+                    parameters.Add($"{typeName} {paramName}");
+                }
+            }
+            
+            return parameters;
+        }
+
+        // Keep the old method but mark it as obsolete
+        [Obsolete("Use GenerateModuleClientInterfacesFromOpenApi instead")]
+        private void GenerateModuleClientInterfaces(string code, string projectName, string targetDirectory, List<string> moduleNames)
+        {
+            if (moduleNames == null || !moduleNames.Any())
+                return;
+
+            var root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
+            
+            // Extract the NSWAG-generated interface
+            var clientInterface = root?.DescendantNodes().OfType<InterfaceDeclarationSyntax>().FirstOrDefault();
+            if (clientInterface == null)
+                return;
+
+            // Get all methods from the interface
+            var allMethods = clientInterface.Members.OfType<MethodDeclarationSyntax>().ToList();
+
+            // Group methods by module name prefix
+            foreach (var moduleName in moduleNames)
+            {
+                var modulePrefix = moduleName;
+                var moduleMethods = allMethods
+                    .Where(m => m.Identifier.Text.StartsWith(modulePrefix))
+                    .ToList();
+
+                if (moduleMethods.Any())
+                {
+                    var moduleInterfaceCode = GenerateModuleInterface(moduleName, projectName, moduleMethods);
+                    var moduleInterfaceFilePath = Path.Combine(targetDirectory, $"I{moduleName}Client.g.cs");
+                    File.WriteAllText(moduleInterfaceFilePath, moduleInterfaceCode);
+                }
+            }
+        }
+
+        private string GenerateModuleInterface(string moduleName, string namespaceName, List<MethodDeclarationSyntax> methods)
+        {
+            var methodDeclarations = new List<string>();
+
+            foreach (var method in methods)
+            {
+                var returnType = method.ReturnType.ToString();
+                var methodName = method.Identifier.ToString();
+                
+                // Get parameters
+                var parameters = method.ParameterList.Parameters
+                    .Select(p => $"{p.Type} {p.Identifier}{(p.Default != null ? " = " + p.Default : "")}")
+                    .ToList();
+                var parameterList = string.Join(", ", parameters);
+                
+                // Get XML documentation if present
+                var leadingTrivia = method.GetLeadingTrivia();
+                foreach (var trivia in leadingTrivia)
+                {
+                    if (trivia.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia))
+                    {
+                        // Get the trivia text and ensure proper formatting
+                        var triviaText = trivia.ToString();
+                        if (!string.IsNullOrWhiteSpace(triviaText))
+                        {
+                            // Trim any trailing whitespace but preserve leading spaces for indentation
+                            var line = triviaText.TrimEnd();
+                            // Add proper indentation (8 spaces) and ensure we have the line
+                            methodDeclarations.Add("        " + line);
+                        }
+                    }
+                    else if (trivia.IsKind(SyntaxKind.EndOfLineTrivia))
+                    {
+                        // Skip end of line trivia - we'll handle line breaks ourselves
+                        continue;
+                    }
+                }
+                
+                methodDeclarations.Add($"        {returnType} {methodName}({parameterList});");
+                methodDeclarations.Add(""); // Empty line between methods
+            }
+
+            if (methodDeclarations.Any() && string.IsNullOrEmpty(methodDeclarations.Last()))
+            {
+                methodDeclarations.RemoveAt(methodDeclarations.Count - 1);
+            }
+
+            var methodsCode = string.Join("\r\n", methodDeclarations);
+
+            return $@"//----------------------
+// <auto-generated>
+//     Generated by LazyMagic, do not edit directly. Changes will be overwritten.
+// </auto-generated>
+//----------------------
+
+namespace {namespaceName}
+{{
+    public partial interface I{moduleName}Client
+    {{
+{methodsCode}
+    }}
+}}
+";
         }
         
         private static void RemoveInterface(ref CompilationUnitSyntax root)
