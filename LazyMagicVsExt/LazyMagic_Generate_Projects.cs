@@ -139,7 +139,8 @@ namespace LazyMagicVsExt
                         if( file.EndsWith(".yaml") || file.EndsWith(".json") || file.EndsWith(".ps1"))
                             AddFileToProject(solutionItemsProject, Path.Combine(solutionRootFolderPath, file));
 
-                    AddProjects<DotNetProjectBase>(solution, lzSolution.Directives, solutionRootFolderPath);
+                    // Use hybrid approach: folder-based discovery + DTE API for adding
+                    AddProjectsUsingFolderDiscovery(solution, solutionRootFolderPath);
 
                     await logger.InfoAsync("LazyMagic processing complete");
 
@@ -149,6 +150,55 @@ namespace LazyMagicVsExt
                     await logger.ErrorAsync(ex, "LazyMagic Encountered an Error");
                 }
             });
+        }
+
+        private void AddProjectsUsingFolderDiscovery(Solution4 solution, string solutionRootFolderPath)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            
+            try
+            {
+                var solutionFilePath = solution.FullName;
+                var solutionProjectAdder = new SolutionProjectAdder(solutionFilePath);
+                var missingProjects = solutionProjectAdder.GetMissingProjects();
+                
+                foreach (var projectPath in missingProjects)
+                {
+                    // Determine the output folder based on the project path
+                    var relativePath = GetRelativePath(solutionRootFolderPath, projectPath);
+                    var outputFolder = Path.GetDirectoryName(relativePath).Split(Path.DirectorySeparatorChar)[0];
+                    
+                    if (string.IsNullOrEmpty(outputFolder) || outputFolder == ".")
+                    {
+                        // Add project to the root of the solution
+                        AddProjectToSolutionRoot(solution, solutionRootFolderPath, relativePath);
+                    }
+                    else
+                    {
+                        // Create Solution folder if necessary
+                        Project solutionFolderProject = GetProject(new List<string> { outputFolder });
+                        if (solutionFolderProject == null)
+                            solutionFolderProject = solution.AddSolutionFolder(outputFolder);
+
+                        // Add the project to the solution folder
+                        AddProjectToSolutionFolder(solutionFolderProject, solutionRootFolderPath, projectPath);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error adding projects using folder discovery: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Helper method to get relative path (replacement for Path.GetRelativePath which is not available in .NET Framework 4.8)
+        /// </summary>
+        private string GetRelativePath(string basePath, string fullPath)
+        {
+            var baseUri = new Uri(basePath.EndsWith("\\") ? basePath : basePath + "\\");
+            var fullUri = new Uri(fullPath);
+            return Uri.UnescapeDataString(baseUri.MakeRelativeUri(fullUri).ToString().Replace('/', '\\'));
         }
 
         private void AddProjects<T>(Solution4 solution, Directives directives, string solutionRootFolderPath)

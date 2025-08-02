@@ -75,7 +75,7 @@ namespace LazyMagicApp
                 await lzSolution.ProcessAsync();
                 await AddProjectsToSolutionAsync(projectsOptions.SolutionFilePath);  
 
-                var solutionProjectAdder = new SolutionProjectAdder(projectsOptions.SolutionFilePath);
+                var solutionProjectAdder = new LazyMagic.SolutionProjectAdder(projectsOptions.SolutionFilePath);
                 solutionProjectAdder.AddMissingProjects();
 
                 //// Get current projects using "dotnet sln <slnFilePath> list

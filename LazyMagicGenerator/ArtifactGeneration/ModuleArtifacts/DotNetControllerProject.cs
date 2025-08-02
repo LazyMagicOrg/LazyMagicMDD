@@ -33,8 +33,10 @@ namespace LazyMagic
         public string ExportedOpenApiSpec { get; set; } = "";
         public string ExportedClientInterface { get; set; } = "";
         public string ExportedClientInterfaceName { get; set; } = "";
+        public string ExportedClientInterfaceProjectPath { get; set; } = "";
 
         public string ControllerLifetime { get; set; } = "Singleton";
+        public bool GenerateClientInterface { get; set; } = true;
 
         #endregion
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
@@ -239,6 +241,14 @@ public partial class {projectName}Controller : {projectName}ControllerBase {{}}
                 foreach (var path in openApiDocument.Paths)
                     ExportedPathOps.Add((path.Key, path.Value.Keys.ToList()));
 
+                // Generate client interface project if enabled
+                if (GenerateClientInterface)
+                {
+                    // Get schema dependencies for client interface (not repo dependencies)
+                    var dependantSchemaArtifacts = solution.Directives.GetArtifactsByType<DotNetSchemaProject>(schemas);
+                    await GenerateClientInterfaceProject(solution, directive, openApiDocument, dependantSchemaArtifacts.ToList());
+                }
+
             } 
             catch (Exception)
             {
@@ -272,6 +282,408 @@ public partial class {projectName}Controller : {projectName}ControllerBase {{}}
             }
                     
             return result;
+        }
+
+        private async Task GenerateClientInterfaceProject(SolutionBase solution, Module directive, OpenApiDocument openApiDocument, List<DotNetSchemaProject> dependantSchemaArtifacts)
+        {
+            await Task.Delay(0);
+            var clientProjectName = directive.Key + "ClientInterface";
+            var clientOutputFolder = "ClientSDKs";
+            var nameSpace = directive.Key; // Use module name as namespace
+            
+            Info($"Generating client interface project {clientProjectName}");
+
+            // Copy BasicLib template to target directory
+            var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, "ProjectTemplates/BasicLib");
+            var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(clientOutputFolder, clientProjectName));
+            var csprojFileName = GetCsprojFile(sourceProjectDir);
+            var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md" };
+            CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
+
+            // Create project file
+            File.Copy(
+                Path.Combine(sourceProjectDir, csprojFileName),
+                Path.Combine(targetProjectDir, clientProjectName + ".csproj"),
+                overwrite: true);
+
+            // Generate project references from schema artifacts (client-side DTOs only)
+            var clientProjectReferences = new List<string>();
+            var clientPackageReferences = new List<string>();
+            var clientGlobalUsings = new List<string>();
+
+            foreach (var dotNetSchemaProject in dependantSchemaArtifacts)
+            {
+                clientProjectReferences.Add(dotNetSchemaProject.ExportedProjectPath);
+                clientPackageReferences.AddRange(dotNetSchemaProject.ExportedPackages);
+                clientGlobalUsings.AddRange(dotNetSchemaProject.ExportedGlobalUsings);
+            }
+
+            clientProjectReferences = clientProjectReferences.Distinct().ToList();
+            clientPackageReferences = clientPackageReferences.Distinct().ToList();
+            clientGlobalUsings = clientGlobalUsings.Distinct().ToList();
+            clientGlobalUsings.Add(nameSpace);
+
+            // Generate Projects.g.props
+            GenerateProjectsPropsFile(clientProjectReferences, Path.Combine(targetProjectDir, "Projects.g.props"));
+
+            // Generate GlobalUsing.g.cs
+            var globalUsingsContent = @"// This file is copied from the ProjectTemplate
+// Do not modify in the target project or your changes
+// will be overwritten.
+// Add a GlobalUsing.cs file in the target project
+// to add additional global usings.
+
+global using LazyMagic.Shared;
+
+";
+            GenerateGlobalUsingFile(clientGlobalUsings, globalUsingsContent, Path.Combine(targetProjectDir, "GlobalUsing.g.cs"));
+
+            // Generate the client interface from the same OpenAPI document
+            var interfaceCode = await GenerateModuleClientInterface(directive.Key, nameSpace, openApiDocument);
+            var interfaceFilePath = Path.Combine(targetProjectDir, $"I{directive.Key}Client.g.cs");
+            File.WriteAllText(interfaceFilePath, interfaceCode);
+
+            // Set export
+            ExportedClientInterfaceProjectPath = Path.Combine(clientOutputFolder, clientProjectName, clientProjectName + ".csproj");
+        }
+
+        private async Task<string> GenerateModuleClientInterface(string moduleName, string namespaceName, OpenApiDocument openApiDocument)
+        {
+            await Task.Delay(0);
+            
+            // Use NSWAG to generate the controller interface in memory first
+            var nswagSettings = new CSharpControllerGeneratorSettings
+            {
+                UseActionResultType = true,
+                ClassName = $"{moduleName}Controller",
+                ControllerTarget = NSwag.CodeGeneration.CSharp.Models.CSharpControllerTarget.AspNetCore,
+                GenerateModelValidationAttributes = false,
+                CSharpGeneratorSettings = 
+                {
+                    Namespace = namespaceName,
+                    GenerateDataAnnotations = false,
+                    ClassStyle = NJsonSchema.CodeGeneration.CSharp.CSharpClassStyle.Inpc
+                }
+            };
+            
+            var nswagGenerator = new CSharpControllerGenerator(openApiDocument, nswagSettings);
+            var controllerCode = nswagGenerator.GenerateFile();
+            
+            // Parse the generated controller interface and transform it to client interface
+            var root = CSharpSyntaxTree.ParseText(controllerCode).GetCompilationUnitRoot();
+            var interfaceNode = root.DescendantNodes().OfType<InterfaceDeclarationSyntax>().FirstOrDefault();
+            
+            if (interfaceNode == null)
+            {
+                return GenerateEmptyClientInterface(moduleName, namespaceName);
+            }
+            
+            // Transform the interface for client use
+            var clientMethods = new List<string>();
+            
+            foreach (var method in interfaceNode.Members.OfType<MethodDeclarationSyntax>())
+            {
+                // Transform the method for client interface
+                var clientMethod = TransformControllerMethodToClientMethod(method);
+                if (!string.IsNullOrEmpty(clientMethod))
+                {
+                    clientMethods.Add(clientMethod);
+                }
+            }
+            
+            var methodsCode = string.Join("\r\n\r\n", clientMethods);
+
+            return $@"//----------------------
+// <auto-generated>
+//     Generated by LazyMagic, do not edit directly. Changes will be overwritten.
+// </auto-generated>
+//----------------------
+
+namespace {namespaceName}
+{{
+    public partial interface I{moduleName}Client
+    {{
+{methodsCode}
+    }}
+}}
+";
+        }
+        
+        private string GenerateEmptyClientInterface(string moduleName, string namespaceName)
+        {
+            return $@"//----------------------
+// <auto-generated>
+//     Generated by LazyMagic, do not edit directly. Changes will be overwritten.
+// </auto-generated>
+//----------------------
+
+namespace {namespaceName}
+{{
+    public partial interface I{moduleName}Client
+    {{
+        // No operations found
+    }}
+}}
+";
+        }
+        
+        private string TransformControllerMethodToClientMethod(MethodDeclarationSyntax method)
+        {
+            if (method == null) return string.Empty;
+            
+            // Extract method documentation
+            var documentationLines = new List<string>();
+            var leadingTrivia = method.GetLeadingTrivia();
+            
+            foreach (var trivia in leadingTrivia)
+            {
+                if (trivia.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia) || 
+                    trivia.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
+                {
+                    var docText = trivia.ToString().Trim();
+                    if (!string.IsNullOrEmpty(docText))
+                    {
+                        // Fix malformed XML comments by ensuring /// prefix
+                        var lines = docText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var line in lines)
+                        {
+                            var trimmedLine = line.Trim();
+                            if (trimmedLine.StartsWith("///"))
+                            {
+                                documentationLines.Add($"        {trimmedLine}");
+                            }
+                            else if (trimmedLine.StartsWith("//"))
+                            {
+                                documentationLines.Add($"        ///{trimmedLine.Substring(2)}");
+                            }
+                            else if (trimmedLine.StartsWith("<") && (trimmedLine.Contains("summary") || trimmedLine.Contains("param") || trimmedLine.Contains("returns")))
+                            {
+                                documentationLines.Add($"        /// {trimmedLine}");
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Transform return type from Task<ActionResult<T>> to Task<T>
+            var returnType = method.ReturnType.ToString();
+            var clientReturnType = TransformReturnTypeForClient(returnType);
+            
+            // Get method name and parameters
+            var methodName = method.Identifier.ToString();
+            var parameters = method.ParameterList.ToString();
+            
+            // Add ApiException documentation if not present
+            var hasApiExceptionDoc = documentationLines.Any(line => line.Contains("ApiException"));
+            if (!hasApiExceptionDoc)
+            {
+                documentationLines.Add("        /// <exception cref=\"ApiException\">A server side error occurred.</exception>");
+            }
+            
+            var documentation = string.Join("\r\n", documentationLines);
+            if (!string.IsNullOrEmpty(documentation))
+            {
+                documentation += "\r\n";
+            }
+            
+            return $"{documentation}        {clientReturnType} {methodName}{parameters};";
+        }
+        
+        private string TransformReturnTypeForClient(string controllerReturnType)
+        {
+            // Transform Task<ActionResult<T>> to Task<T>
+            // Transform Task<IActionResult> to Task
+            // Handle both short and fully qualified names
+            
+            // Handle Microsoft.AspNetCore.Mvc.ActionResult<T>
+            if (controllerReturnType.Contains("ActionResult<") && controllerReturnType.EndsWith(">>"))
+            {
+                // Extract T from Task<ActionResult<T>> or Task<Microsoft.AspNetCore.Mvc.ActionResult<T>>
+                var actionResultStart = controllerReturnType.IndexOf("ActionResult<") + "ActionResult<".Length;
+                var end = controllerReturnType.LastIndexOf(">>");
+                var innerType = controllerReturnType.Substring(actionResultStart, end - actionResultStart);
+                return $"System.Threading.Tasks.Task<{innerType}>";
+            }
+            // Handle IActionResult (both short and fully qualified)
+            else if (controllerReturnType.Contains("IActionResult>"))
+            {
+                return "System.Threading.Tasks.Task";
+            }
+            // Handle ActionResult<T> without Task wrapper (shouldn't happen but just in case)
+            else if (controllerReturnType.Contains("ActionResult<") && controllerReturnType.EndsWith(">") && !controllerReturnType.Contains("Task"))
+            {
+                var actionResultStart = controllerReturnType.IndexOf("ActionResult<") + "ActionResult<".Length;
+                var end = controllerReturnType.LastIndexOf(">");
+                var innerType = controllerReturnType.Substring(actionResultStart, end - actionResultStart);
+                return $"System.Threading.Tasks.Task<{innerType}>";
+            }
+            // Handle standalone IActionResult
+            else if (controllerReturnType.Contains("IActionResult") && !controllerReturnType.Contains("Task"))
+            {
+                return "System.Threading.Tasks.Task";
+            }
+            // Handle Task<T> that's already in correct format
+            else if (controllerReturnType.StartsWith("System.Threading.Tasks.Task"))
+            {
+                return controllerReturnType;
+            }
+            // Handle Task<T> without full qualification
+            else if (controllerReturnType.StartsWith("Task<") && controllerReturnType.EndsWith(">"))
+            {
+                return $"System.Threading.Tasks.{controllerReturnType}";
+            }
+            
+            // Fallback - assume it's already correct or add Task wrapper
+            if (controllerReturnType.Contains("Task"))
+            {
+                return controllerReturnType;
+            }
+            else
+            {
+                return $"System.Threading.Tasks.Task<{controllerReturnType}>";
+            }
+        }
+
+
+        private string GetClientReturnTypeFromOperation(NSwag.OpenApiOperation operation)
+        {
+            var successResponse = operation.Responses.FirstOrDefault(r => r.Key.StartsWith("2"));
+            if (successResponse.Value?.Schema != null)
+            {
+                var schema = successResponse.Value.Schema;
+                var typeName = GetClientTypeNameFromSchema(schema);
+                
+                if (schema.Type == NJsonSchema.JsonObjectType.Array && schema.Item != null)
+                {
+                    var itemType = GetClientTypeNameFromSchema(schema.Item);
+                    return $"System.Threading.Tasks.Task<System.Collections.Generic.ICollection<{itemType}>>";
+                }
+                else if (!string.IsNullOrEmpty(typeName) && typeName != "void")
+                {
+                    return $"System.Threading.Tasks.Task<{typeName}>";
+                }
+            }
+            
+            return "System.Threading.Tasks.Task";
+        }
+
+        private string GetClientTypeNameFromSchema(NJsonSchema.JsonSchema schema)
+        {
+            if (schema == null)
+                return "object";
+                
+            // Handle schema references (this is where types like TenantUser should be resolved)
+            if (schema.Reference != null)
+            {
+                // Try to get the type name from the reference
+                var reference = schema.Reference;
+                if (!string.IsNullOrEmpty(reference.Id))
+                {
+                    return reference.Id;
+                }
+                
+                // If the reference has a type definition, use that
+                if (reference.ActualSchema != null)
+                {
+                    if (!string.IsNullOrEmpty(reference.ActualSchema.Id))
+                        return reference.ActualSchema.Id;
+                    if (!string.IsNullOrEmpty(reference.ActualSchema.Title))
+                        return reference.ActualSchema.Title;
+                }
+            }
+            
+            // Check if this is a referenced schema by looking at the actual schema
+            if (schema.ActualSchema != null && schema.ActualSchema != schema)
+            {
+                if (!string.IsNullOrEmpty(schema.ActualSchema.Id))
+                    return schema.ActualSchema.Id;
+                if (!string.IsNullOrEmpty(schema.ActualSchema.Title))
+                    return schema.ActualSchema.Title;
+            }
+            
+            // Check for title or id on the schema itself
+            if (!string.IsNullOrEmpty(schema.Id))
+            {
+                return schema.Id;
+            }
+            
+            if (!string.IsNullOrEmpty(schema.Title))
+            {
+                return schema.Title;
+            }
+            
+            // Handle primitive types
+            switch (schema.Type)
+            {
+                case NJsonSchema.JsonObjectType.String:
+                    return "string";
+                case NJsonSchema.JsonObjectType.Integer:
+                    return schema.Format == "int64" ? "long" : "int";
+                case NJsonSchema.JsonObjectType.Number:
+                    return schema.Format == "float" ? "float" : "double";
+                case NJsonSchema.JsonObjectType.Boolean:
+                    return "bool";
+                case NJsonSchema.JsonObjectType.Array:
+                    if (schema.Item != null)
+                    {
+                        var itemType = GetClientTypeNameFromSchema(schema.Item);
+                        return $"System.Collections.Generic.ICollection<{itemType}>";
+                    }
+                    return "System.Collections.Generic.ICollection<object>";
+                case NJsonSchema.JsonObjectType.Object:
+                    // For object types, this might be a complex type that should have been resolved above
+                    // If we get here, it's likely a schema resolution issue
+                    return "object";
+                default:
+                    return "object";
+            }
+        }
+
+        private List<string> GetClientParametersFromOperation(NSwag.OpenApiOperation operation)
+        {
+            var parameters = new List<string>();
+            var usedParameterNames = new HashSet<string>();
+            
+            // Add request body parameter if present
+            if (operation.RequestBody != null)
+            {
+                var bodySchema = operation.RequestBody.Content?.FirstOrDefault().Value?.Schema;
+                if (bodySchema != null)
+                {
+                    var typeName = GetClientTypeNameFromSchema(bodySchema);
+                    parameters.Add($"{typeName} body");
+                    usedParameterNames.Add("body");
+                }
+            }
+            
+            foreach (var parameter in operation.Parameters.OrderBy(p => p.IsRequired ? 0 : 1))
+            {
+                var typeName = GetClientTypeNameFromSchema(parameter.Schema);
+                var paramName = parameter.Name;
+                
+                // Skip if we already have a parameter with this name (avoid duplicates)
+                if (usedParameterNames.Contains(paramName))
+                {
+                    continue;
+                }
+                usedParameterNames.Add(paramName);
+                
+                if (parameter.Schema.Type == NJsonSchema.JsonObjectType.Array)
+                {
+                    typeName = $"System.Collections.Generic.IEnumerable<{GetClientTypeNameFromSchema(parameter.Schema.Item)}>";
+                }
+                
+                if (!parameter.IsRequired && parameter.Schema.Type != NJsonSchema.JsonObjectType.Array)
+                {
+                    parameters.Add($"{typeName} {paramName} = null");
+                }
+                else
+                {
+                    parameters.Add($"{typeName} {paramName}");
+                }
+            }
+            
+            return parameters;
         }
 
         private static void GenerateAuthorizationClass(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, string projectName, string nameSpace, string filePath)
