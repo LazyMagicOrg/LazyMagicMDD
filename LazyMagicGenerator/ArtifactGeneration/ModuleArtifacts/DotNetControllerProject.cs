@@ -151,7 +151,11 @@ namespace LazyMagic
                    CSharpGeneratorSettings =
                        {
                             Namespace = nameSpace,
-                       }
+                            GenerateOptionalPropertiesAsNullable = true,
+                            GenerateNullableReferenceTypes = false,
+                            GenerateDefaultValues = true,
+                       },
+                   GenerateOptionalParameters = true,
                };
                 var nswagGenerator = new CSharpControllerGenerator(openApiDocument, nswagSettings);
                 var code = nswagGenerator.GenerateFile();
@@ -250,9 +254,9 @@ public partial class {projectName}Controller : {projectName}ControllerBase {{}}
                 }
 
             } 
-            catch (Exception)
+            catch (Exception ex)
             {
-                throw new Exception($"Error Generating {GetType().Name} for {projectName}");
+                throw new Exception($"Error Generating {GetType().Name} for {projectName}. {ex.Message}");
             }
 
 
@@ -746,7 +750,7 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
             File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
         }
         private static void RemoveAsyncFromInterfaceMethodNames(ref CompilationUnitSyntax root)
-        {
+        { 
             root = root.ReplaceNodes(
                 root.DescendantNodes()
                     .OfType<InterfaceDeclarationSyntax>()

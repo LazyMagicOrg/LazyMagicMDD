@@ -145,24 +145,30 @@ namespace LazyMagic
 
             foreach (var module in modules)
             {
-                // Merge OpenApi specs - this contains the paths for this controller + the entire aggregated schema
-                // Note: It's necessary to use the aggregated schema because NSWAG will fail if it can't find a schema
-                // object. We won't use this aggregated schema as its' contents are already handled by the 
-                // DotNetSchema and DotNetRepo projects generated from Schema directives.
-                var openApiSpecs = module.OpenApiSpecs ?? new List<string>();
-                var openApiSpecsYaml = await MergeApiFilesAsync(solution.SolutionRootFolderPath, openApiSpecs);
-                openApiSpecsYaml = await MergeYamlAsync(
-                    solution.SolutionRootFolderPath,
-                    new List<string> { openApiSpecsYaml, solution.AggregateSchemas.ToYaml() }
-                    );
-                // openApiSpecsYaml contains the paths for this module and schema definitions for all modules.
-                module.OpenApiSpec = openApiSpecsYaml;
-                // Get a list of the entities referenced in the paths
-                var schemaEntities = GetReferencedEntities(openApiSpecsYaml);
-                // get a list of the minimal set of Schema directive references required to provide the required
-                // schema entities
-                var schemas = GetSchemaNamesForEntities(solution, schemaEntities);
-                module.Schemas = schemas;
+                try
+                {
+                    // Merge OpenApi specs - this contains the paths for this controller + the entire aggregated schema
+                    // Note: It's necessary to use the aggregated schema because NSWAG will fail if it can't find a schema
+                    // object. We won't use this aggregated schema as its' contents are already handled by the 
+                    // DotNetSchema and DotNetRepo projects generated from Schema directives.
+                    var openApiSpecs = module.OpenApiSpecs ?? new List<string>();
+                    var openApiSpecsYaml = await MergeApiFilesAsync(solution.SolutionRootFolderPath, openApiSpecs);
+                    openApiSpecsYaml = await MergeYamlAsync(
+                        solution.SolutionRootFolderPath,
+                        new List<string> { openApiSpecsYaml, solution.AggregateSchemas.ToYaml() }
+                        );
+                    // openApiSpecsYaml contains the paths for this module and schema definitions for all modules.
+                    module.OpenApiSpec = openApiSpecsYaml;
+                    // Get a list of the entities referenced in the paths
+                    var schemaEntities = GetReferencedEntities(openApiSpecsYaml);
+                    // get a list of the minimal set of Schema directive references required to provide the required
+                    // schema entities
+                    var schemas = GetSchemaNamesForEntities(solution, schemaEntities);
+                    module.Schemas = schemas;
+                } catch (Exception ex)
+                {
+                    throw new Exception($"Module: {module.Key}. Error: {ex.Message}");
+                }
             }
             foreach (var module in modules)
             {
