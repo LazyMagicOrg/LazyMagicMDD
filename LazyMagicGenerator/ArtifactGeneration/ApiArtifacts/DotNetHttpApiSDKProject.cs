@@ -134,7 +134,7 @@ namespace LazyMagic
                 {
                     ClassName = projectName,
                     UseBaseUrl = false,
-                    HttpClientType = "ILzHttpClient",
+                    HttpClientType = "HttpClient",
                     GenerateClientInterfaces = true,
                     GenerateDtoTypes = false,
                     CSharpGeneratorSettings =
