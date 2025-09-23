@@ -3,7 +3,7 @@ This solution generates two LazyMagic Generator projects:
 - LazyMagicApp - dotnet command line tool
 - LazyMagicExt - Visual Studio extension 
 
-## Version 2.0.0
+## Version 3.x.x
 Added Module Support 
 
 ## Version Management
