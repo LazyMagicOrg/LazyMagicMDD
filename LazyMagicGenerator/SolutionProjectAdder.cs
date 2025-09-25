@@ -37,6 +37,36 @@ namespace LazyMagic
             }
         }
 
+        public void AddSolutionItems()
+        {
+            try
+            {
+                var solutionDir = Path.GetDirectoryName(_solutionPath);
+                var (solutionItems, openApiFiles) = GetCategorizedFiles(solutionDir);
+
+                if (solutionItems.Count > 0)
+                {
+                    AddFilesToSolutionFolder("Solution Items", solutionItems);
+                    Console.WriteLine($"Added {solutionItems.Count} files to Solution Items folder.");
+                }
+
+                if (openApiFiles.Count > 0)
+                {
+                    AddFilesToSolutionFolder("OpenAPI", openApiFiles);
+                    Console.WriteLine($"Added {openApiFiles.Count} files to OpenAPI folder.");
+                }
+
+                if (solutionItems.Count == 0 && openApiFiles.Count == 0)
+                {
+                    Console.WriteLine("No solution item files to add.");
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new SolutionModificationException("An error occurred while adding solution items.", ex);
+            }
+        }
+
         /// <summary>
         /// Gets all LazyMagic projects in the solution directory that are not currently in the solution.
         /// This method can be used by the Visual Studio extension for folder-based discovery.
@@ -119,6 +149,89 @@ namespace LazyMagic
             }
 
             return allProjects;
+        }
+
+        private (List<string> solutionItems, List<string> openApiFiles) GetCategorizedFiles(string solutionDir)
+        {
+            var solutionItems = new List<string>();
+            var openApiFiles = new List<string>();
+
+            // Get all files in the solution directory (excluding subdirectories)
+            var allFiles = Directory.GetFiles(solutionDir, "*", SearchOption.TopDirectoryOnly);
+
+            foreach (var file in allFiles)
+            {
+                var fileName = Path.GetFileName(file);
+                var extension = Path.GetExtension(file).ToLowerInvariant();
+
+                // Skip the solution file itself
+                if (extension == ".sln")
+                    continue;
+
+                // Check if it's an OpenAPI file
+                if (fileName.StartsWith("openapi.", StringComparison.OrdinalIgnoreCase) &&
+                    (extension == ".yaml" || extension == ".yml" || extension == ".json"))
+                {
+                    openApiFiles.Add(file);
+                    continue;
+                }
+
+                // Include common configuration and documentation files
+                if (extension == ".yaml" || extension == ".yml" ||
+                    extension == ".json" || extension == ".ps1" ||
+                    extension == ".md" || extension == ".txt" ||
+                    extension == ".targets" || extension == ".props" ||
+                    fileName.Equals("README", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.Equals("Dockerfile", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.Equals(".gitignore", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.Equals(".editorconfig", StringComparison.OrdinalIgnoreCase))
+                {
+                    solutionItems.Add(file);
+                }
+            }
+
+            return (solutionItems, openApiFiles);
+        }
+
+        private void AddFilesToSolutionFolder(string folderName, List<string> filesToAdd)
+        {
+            try
+            {
+                // Read the solution file
+                var solutionContent = File.ReadAllText(_solutionPath);
+
+                // Generate a GUID for the folder
+                var folderGuid = Guid.NewGuid().ToString("B").ToUpperInvariant();
+                var folderTypeGuid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}"; // Solution Folder type GUID
+
+                // Check if the folder already exists
+                if (!solutionContent.Contains($"\") = \"{folderName}\", \"{folderName}\", \""))
+                {
+                    // Add the folder
+                    var projectsSection = "Global\r\n\tGlobalSection(SolutionConfigurationPlatforms)";
+
+                    // Add all files to the ProjectSection
+                    var projectSectionContent = "\tProjectSection(SolutionItems) = preProject\r\n";
+                    var solutionDir = Path.GetDirectoryName(_solutionPath);
+                    foreach (var file in filesToAdd)
+                    {
+                        var relativePath = GetRelativePath(solutionDir, file);
+                        projectSectionContent += $"\t\t{relativePath} = {relativePath}\r\n";
+                    }
+                    projectSectionContent += "\tEndProjectSection\r\n";
+
+                    var solutionFolder = $"Project(\"{folderTypeGuid}\") = \"{folderName}\", \"{folderName}\", \"{folderGuid}\"\r\n{projectSectionContent}EndProject\r\n";
+
+                    solutionContent = solutionContent.Replace(projectsSection, solutionFolder + projectsSection);
+
+                    // Write back to the solution file
+                    File.WriteAllText(_solutionPath, solutionContent);
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new SolutionModificationException($"Error adding files to {folderName} folder in the solution file.", ex);
+            }
         }
 
         private void AddProjectsToSolution(List<string> projectsToAdd)

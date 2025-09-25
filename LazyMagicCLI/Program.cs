@@ -89,6 +89,7 @@ namespace LazyMagicApp
                 var solutionFilePath = slnFiles[0];
                 var solutionProjectAdder = new LazyMagic.SolutionProjectAdder(solutionFilePath);
                 solutionProjectAdder.AddMissingProjects();
+                solutionProjectAdder.AddSolutionItems();
 
                 //// Get current projects using "dotnet sln <slnFilePath> list
                 //var startInfo = new ProcessStartInfo();
