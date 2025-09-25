@@ -20,28 +20,35 @@ namespace LazyMagic
 
         public override async Task GenerateAsync(SolutionBase solution, DirectiveBase directiveArg)
         {
-            await Task.Delay(0);   
-            Deployment directive = (Deployment)directiveArg;
-            var deploymentConfig = new AwsDeploymentConfigContent();
-
-            // We collect all the cognito resources from the services as we process each service
-            var AwsCognitoResources = new List<AwsCognitoResource>();
-            var serviceStacks = GetAwsServiceStacks(solution);  
-            foreach (var service in serviceStacks)
+            try
             {
-                deploymentConfig.Services.Add(service.AwsServiceConfig);
-                AwsCognitoResources.AddRange(GetAwsCognitoResources(solution, solution.Directives[service.AwsServiceConfig.Name].Cast<Service>()));
-            }
+                await Task.Delay(0);
+                Deployment directive = (Deployment)directiveArg;
+                var deploymentConfig = new AwsDeploymentConfigContent();
 
-            AwsCognitoResources = AwsCognitoResources.Distinct().ToList();
-            foreach (var cognitoAuth in AwsCognitoResources)
-            {
-                deploymentConfig.Authentications.Add(cognitoAuth.ExportedConfig);
+                // We collect all the cognito resources from the services as we process each service
+                var AwsCognitoResources = new List<AwsCognitoResource>();
+                var serviceStacks = GetAwsServiceStacks(solution);
+                foreach (var service in serviceStacks)
+                {
+                    deploymentConfig.Services.Add(service.AwsServiceConfig);
+                    AwsCognitoResources.AddRange(GetAwsCognitoResources(solution, solution.Directives[service.AwsServiceConfig.Name].Cast<Service>()));
+                }
+
+                AwsCognitoResources = AwsCognitoResources.Distinct().ToList();
+                foreach (var cognitoAuth in AwsCognitoResources)
+                {
+                    deploymentConfig.Authentications.Add(cognitoAuth.ExportedConfig);
+                }
+                var AuthConfigYamlFile = Path.Combine(solution.SolutionRootFolderPath, "AwsTemplates", "Generated", "deploymentconfig.g.yaml");
+                var serializer = new SerializerBuilder().Build();
+                var yaml = serializer.Serialize(deploymentConfig);
+                File.WriteAllText(AuthConfigYamlFile, yaml);
             }
-            var AuthConfigYamlFile = Path.Combine(solution.SolutionRootFolderPath, "AwsTemplates", "Generated", "deploymentconfig.g.yaml");
-            var serializer = new SerializerBuilder().Build();
-            var yaml = serializer.Serialize(deploymentConfig);
-            File.WriteAllText(AuthConfigYamlFile, yaml);
+            catch (Exception ex)
+            {
+                throw new Exception($"Error Generating {GetType().Name}. {ex.Message}");
+            }
         }
 
         private List<AwsCognitoResource> GetAwsCognitoResources(SolutionBase solution, Service directive) =>

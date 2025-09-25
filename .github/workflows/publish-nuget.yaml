@@ -48,14 +48,3 @@ jobs:
         git tag -a v${{ steps.get_version.outputs.VERSION }} -m "Release v${{ steps.get_version.outputs.VERSION }}"
         git push origin v${{ steps.get_version.outputs.VERSION }}
 
-
-    # Note that we are publishing the vsix that was checked into the repo. Building the LazyMagicVsExt project on GitHub is failing at this point 
-    # and further research is required to figure it out. Yes, we tried the windows-latest runner etc. 
-
-    - name: Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: v${{ steps.get_version.outputs.VERSION }}
-        files: |
-          LICENSE.txt
-          LazyMagicVsExt.vsix

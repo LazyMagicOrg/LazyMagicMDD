@@ -69,14 +69,27 @@ namespace LazyMagicApp
             try
             {
                 projectsOptions.SolutionFilePath ??= Directory.GetCurrentDirectory();
-                
+
+                // Find the .sln file in the solution directory
+                var slnFiles = Directory.GetFiles(projectsOptions.SolutionFilePath, "*.sln", SearchOption.TopDirectoryOnly);
+                if (slnFiles.Length == 0)
+                {
+                    throw new FileNotFoundException($"No solution file (.sln) found in {projectsOptions.SolutionFilePath}");
+                }
+                if (slnFiles.Length > 1)
+                {
+                    throw new InvalidOperationException($"Multiple solution files found in {projectsOptions.SolutionFilePath}. Please specify which one to use.");
+                }
+
                 var lzSolution = new LzSolution(logger, projectsOptions.SolutionFilePath);
 
                 await lzSolution.ProcessAsync();
-                await AddProjectsToSolutionAsync(projectsOptions.SolutionFilePath);  
+                await AddProjectsToSolutionAsync(projectsOptions.SolutionFilePath);
 
-                var solutionProjectAdder = new SolutionProjectAdder(projectsOptions.SolutionFilePath);
+                var solutionFilePath = slnFiles[0];
+                var solutionProjectAdder = new LazyMagic.SolutionProjectAdder(solutionFilePath);
                 solutionProjectAdder.AddMissingProjects();
+                solutionProjectAdder.AddSolutionItems();
 
                 //// Get current projects using "dotnet sln <slnFilePath> list
                 //var startInfo = new ProcessStartInfo();
