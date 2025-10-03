@@ -152,6 +152,11 @@ namespace LazyMagic
                 .Select(s => s.Key)
                 .ToList();
         }
+        /// <summary>
+        /// Finds all schema entities transitively referenced from the paths section of an OpenAPI spec.
+        /// Starts with entities directly referenced in paths, then recursively follows references
+        /// within components/schemas to find all transitive dependencies.
+        /// </summary>
         public static List<string> GetReferencedEntities(string yamlContent)
         {
             var yaml = new YamlStream();
@@ -160,8 +165,96 @@ namespace LazyMagic
                 yaml.Load(reader);
             }
 
-            var rootNode = yaml.Documents[0].RootNode;
-            return FindRefNodes(rootNode);
+            var rootNode = (YamlMappingNode)yaml.Documents[0].RootNode;
+
+            YamlNode pathsNode = null;
+            YamlNode schemasNode = null;
+
+            // Find both paths and components/schemas sections
+            foreach (var child in rootNode.Children)
+            {
+                if (child.Key is YamlScalarNode keyNode)
+                {
+                    if (keyNode.Value == "paths")
+                    {
+                        pathsNode = child.Value;
+                    }
+                    else if (keyNode.Value == "components" && child.Value is YamlMappingNode componentsMap)
+                    {
+                        foreach (var componentChild in componentsMap.Children)
+                        {
+                            if (componentChild.Key is YamlScalarNode compKeyNode && compKeyNode.Value == "schemas")
+                            {
+                                schemasNode = componentChild.Value;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (pathsNode == null)
+            {
+                return new List<string>();
+            }
+
+            // Find all refs directly in paths
+            var seedRefs = FindRefNodes(pathsNode);
+
+            // If no schemas section, return just the seed refs
+            if (schemasNode == null)
+            {
+                return seedRefs;
+            }
+
+            // Recursively find all transitive dependencies
+            return FindTransitiveDependencies(seedRefs, (YamlMappingNode)schemasNode);
+        }
+
+        /// <summary>
+        /// Given a set of seed entity names, recursively find all entities they transitively depend on
+        /// by following $ref nodes within the schemas section.
+        /// </summary>
+        private static List<string> FindTransitiveDependencies(List<string> seedEntities, YamlMappingNode schemasNode)
+        {
+            var allEntities = new HashSet<string>();
+            var toProcess = new Queue<string>(seedEntities);
+            var processed = new HashSet<string>();
+
+            while (toProcess.Count > 0)
+            {
+                var entity = toProcess.Dequeue();
+
+                if (processed.Contains(entity))
+                {
+                    continue;
+                }
+
+                processed.Add(entity);
+                allEntities.Add(entity);
+
+                // Find the schema definition for this entity
+                foreach (var schemaEntry in schemasNode.Children)
+                {
+                    if (schemaEntry.Key is YamlScalarNode keyNode && keyNode.Value == entity)
+                    {
+                        // Find all refs within this schema definition
+                        var referencedEntities = FindRefNodes(schemaEntry.Value);
+
+                        // Add newly discovered entities to the processing queue
+                        foreach (var refEntity in referencedEntities)
+                        {
+                            if (!processed.Contains(refEntity))
+                            {
+                                toProcess.Enqueue(refEntity);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            return allEntities.ToList();
         }
 
         private static List<string> FindRefNodes(YamlNode node)
@@ -197,63 +290,6 @@ namespace LazyMagic
 
             return refNodes.Distinct().ToList();
         }
-        // TODO: need to search Paths as well
-        //public static List<string> GetReferencedEntities(string yamlContent)
-        //{
-        //    var yaml = new YamlStream();
-        //    using (var reader = new StringReader(yamlContent))
-        //    {
-        //        yaml.Load(reader);
-        //    }
-
-        //    var rootNode = (YamlMappingNode)yaml.Documents[0].RootNode;
-
-        //    // Navigate to the components.schemas section
-        //    if (rootNode.Children.TryGetValue("components", out var componentsNode))
-        //    {
-        //        var componentsMapping = (YamlMappingNode)componentsNode;
-        //        if (componentsMapping.Children.TryGetValue("schemas", out var schemasNode))
-        //        {
-        //            var schemasMapping = (YamlMappingNode)schemasNode;
-        //            return FindRefNodes(schemasMapping);
-        //        }
-        //    }
-
-        //    return new List<string>();
-
-        //}
-        //private static List<string> FindRefNodes(YamlMappingNode node)
-        //{
-        //    var refNodes = new List<string>();
-
-        //    foreach (var child in node.Children)
-        //    {
-        //        if (child.Key is YamlScalarNode keyNode && keyNode.Value == "$ref")
-        //        {
-        //            var reference = ((YamlScalarNode)child.Value).Value;
-        //            if (string.IsNullOrEmpty(reference)) continue;
-        //            var lastSlashIndex = reference.LastIndexOf('/');
-        //            reference = lastSlashIndex >= 0 ? reference.Substring(lastSlashIndex + 1) : reference;
-        //            refNodes.Add(reference);
-        //        }
-        //        else if (child.Value is YamlMappingNode childMapping)
-        //        {
-        //            refNodes.AddRange(FindRefNodes(childMapping));
-        //        }
-        //        else if (child.Value is YamlSequenceNode sequenceNode)
-        //        {
-        //            foreach (var item in sequenceNode.Children)
-        //            {
-        //                if (item is YamlMappingNode itemMapping)
-        //                {
-        //                    refNodes.AddRange(FindRefNodes(itemMapping));
-        //                }
-        //            }
-        //        }
-        //    }
-
-        //    return refNodes;
-        //}
 
         public static List<string> GetSchemaNames(string yamlContent)
         {

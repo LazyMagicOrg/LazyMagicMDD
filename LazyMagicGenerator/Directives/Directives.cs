@@ -159,7 +159,7 @@ namespace LazyMagic
                         );
                     // openApiSpecsYaml contains the paths for this module and schema definitions for all modules.
                     module.OpenApiSpec = openApiSpecsYaml;
-                    // Get a list of the entities referenced in the paths
+                    // Get a list of the entities referenced in the paths - includes transitive references
                     var schemaEntities = GetReferencedEntities(openApiSpecsYaml);
                     // get a list of the minimal set of Schema directive references required to provide the required
                     // schema entities
