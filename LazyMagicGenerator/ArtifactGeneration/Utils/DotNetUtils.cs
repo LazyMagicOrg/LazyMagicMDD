@@ -274,9 +274,26 @@ namespace LazyMagic
         {
             var packagePropsCode = "";
             foreach (var packageRef in packageReferences)
-                packagePropsCode += Path.IsPathRooted(packageRef)
-                    ? $"<PackageReference Include=\"{packageRef}\" />\r\n"
-                    : $"<PackageReference Include=\"$(SolutionDir){packageRef}\" />\r\n";
+            {
+                // Check if it's a file path reference (contains path separators) or a NuGet package name
+                var isPathReference = packageRef.Contains('/') || packageRef.Contains('\\');
+
+                if (Path.IsPathRooted(packageRef))
+                {
+                    // Absolute path - use as is
+                    packagePropsCode += $"<PackageReference Include=\"{packageRef}\" />\r\n";
+                }
+                else if (isPathReference)
+                {
+                    // Relative path - add SolutionDir prefix
+                    packagePropsCode += $"<PackageReference Include=\"$(SolutionDir){packageRef}\" />\r\n";
+                }
+                else
+                {
+                    // NuGet package name - use as is without any prefix
+                    packagePropsCode += $"<PackageReference Include=\"{packageRef}\" />\r\n";
+                }
+            }
 
             var propsfilecontent = $@"
 <Project>

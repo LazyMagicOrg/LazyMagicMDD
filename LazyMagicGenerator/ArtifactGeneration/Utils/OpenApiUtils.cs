@@ -139,6 +139,12 @@ namespace LazyMagic
             return entities;    
 
         }
+        /// <summary>
+        /// Given a list of entity names, find which Schema directive(s) define those entities.
+        /// </summary>
+        /// <param name="solution"></param>
+        /// <param name="entities"></param>
+        /// <returns></returns>
         public static List<string> GetSchemaNamesForEntities(SolutionBase solution, List<string> entities)
         {
             return solution.Directives
@@ -189,7 +195,7 @@ namespace LazyMagic
                     break;
             }
 
-            return refNodes;
+            return refNodes.Distinct().ToList();
         }
         // TODO: need to search Paths as well
         //public static List<string> GetReferencedEntities(string yamlContent)
