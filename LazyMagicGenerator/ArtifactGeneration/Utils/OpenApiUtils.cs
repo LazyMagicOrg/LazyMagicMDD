@@ -153,9 +153,11 @@ namespace LazyMagic
                 .ToList();
         }
         /// <summary>
-        /// Finds all schema entities transitively referenced from the paths section of an OpenAPI spec.
-        /// Starts with entities directly referenced in paths, then recursively follows references
-        /// within components/schemas to find all transitive dependencies.
+        /// Finds all schema entities transitively referenced in an OpenAPI spec.
+        /// - If paths section exists: Starts with entities referenced in paths, then recursively follows
+        ///   references within components/schemas to find all transitive dependencies.
+        /// - If no paths but components/schemas exists: Finds all entities referenced within the schema
+        ///   definitions themselves (for schema-only specs).
         /// </summary>
         public static List<string> GetReferencedEntities(string yamlContent)
         {
@@ -193,22 +195,26 @@ namespace LazyMagic
                 }
             }
 
-            if (pathsNode == null)
+            // Case 1: Has paths section (Module specs) - find refs from paths and follow transitively
+            if (pathsNode != null)
             {
-                return new List<string>();
+                var seedRefs = FindRefNodes(pathsNode);
+
+                if (schemasNode == null)
+                {
+                    return seedRefs;
+                }
+
+                return FindTransitiveDependencies(seedRefs, (YamlMappingNode)schemasNode);
             }
 
-            // Find all refs directly in paths
-            var seedRefs = FindRefNodes(pathsNode);
-
-            // If no schemas section, return just the seed refs
-            if (schemasNode == null)
+            // Case 2: No paths but has schemas (Schema-only specs) - find all refs within schema definitions
+            if (schemasNode != null)
             {
-                return seedRefs;
+                return FindRefNodes(schemasNode);
             }
 
-            // Recursively find all transitive dependencies
-            return FindTransitiveDependencies(seedRefs, (YamlMappingNode)schemasNode);
+            return new List<string>();
         }
 
         /// <summary>

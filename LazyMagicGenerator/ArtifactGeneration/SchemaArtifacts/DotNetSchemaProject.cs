@@ -83,8 +83,9 @@ namespace LazyMagic
                 var schemaEntities = GetSchemaNames(yamlSpec);
                 var openApiDocument = solution.AggregateSchemas;
 
-                // Get Dependencies 
-                var dependantArtifacts = solution.Directives.GetArtifactsByType<DotNetSchemaProject>(directive.Schemas);
+                // Get Dependencies - compute transitive closure
+                var allSchemaDependencies = GetTransitiveSchemaDependencies(directive.Schemas, solution.Directives);
+                var dependantArtifacts = solution.Directives.GetArtifactsByType<DotNetSchemaProject>(allSchemaDependencies);
                 foreach(var dotNetSchemaArtifact in dependantArtifacts)
                 {
                     var dotNetSchemaProject = dotNetSchemaArtifact as DotNetSchemaProject;
@@ -180,6 +181,45 @@ namespace LazyMagic
                 throw new Exception($"Error generating {GetType().Name} for {projectName} : {ex.Message}");
             }
         }
+        /// <summary>
+        /// Computes the transitive closure of schema dependencies.
+        /// If A depends on B and B depends on C, returns [B, C] for input [A].
+        /// </summary>
+        private static List<string> GetTransitiveSchemaDependencies(List<string> directDependencies, Directives directives)
+        {
+            var allDependencies = new HashSet<string>();
+            var toProcess = new Queue<string>(directDependencies);
+            var processed = new HashSet<string>();
+
+            while (toProcess.Count > 0)
+            {
+                var schemaKey = toProcess.Dequeue();
+
+                if (processed.Contains(schemaKey))
+                {
+                    continue;
+                }
+
+                processed.Add(schemaKey);
+                allDependencies.Add(schemaKey);
+
+                // Get the schema directive
+                if (directives.TryGetValue(schemaKey, out var directive) && directive is Schema schema)
+                {
+                    // Add its direct dependencies to the processing queue
+                    foreach (var dependentSchema in schema.Schemas ?? new List<string>())
+                    {
+                        if (!processed.Contains(dependentSchema))
+                        {
+                            toProcess.Enqueue(dependentSchema);
+                        }
+                    }
+                }
+            }
+
+            return allDependencies.ToList();
+        }
+
         public static bool HasPublicIdProperty(ClassDeclarationSyntax classDeclaration)
         {
             return classDeclaration.Members
