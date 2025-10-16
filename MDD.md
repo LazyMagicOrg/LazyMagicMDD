@@ -9,13 +9,13 @@ LazyMagic MDD generates complete serverless applications from:
 - **YAML Configuration** - Specify what components to generate and how they connect
 - **Templates** - Customize the generated code structure
 
-The framework produces ready-to-deploy AWS serverless applications with:
-- .NET Lambda functions
+The framework produces ready-to-deploy AWS applications with:
+- ASP.NET Core containerized applications running on AWS App Runner
 - AWS SAM templates
 - DynamoDB repositories
-- API Gateway configurations
-- Client SDKs
-- Authentication and authorization
+- Strongly-typed client SDKs
+- Cognito authentication and authorization
+- AppSync Events for real-time notifications
 
 ## Core Components
 
@@ -51,9 +51,9 @@ Visual Studio extension providing integrated project generation within the IDE.
 Directives are YAML configuration objects that specify what to generate. They follow a processing order:
 
 1. **Schema** → Data Transfer Objects and DynamoDB repositories
-2. **Module** → Controllers handling API operations  
-3. **Container** → Lambda functions hosting modules
-4. **Api** → API Gateway configurations
+2. **Module** → Controllers handling API operations
+3. **Container** → ASP.NET Core applications running in AWS App Runner
+4. **Api** → API configurations (reserved for future ALB + Fargate support)
 5. **Authentication** → Cognito user pools and authorization
 6. **Queue** → SQS queues for async processing
 7. **Service** → Service-level AWS SAM templates
@@ -65,7 +65,8 @@ Directives are YAML configuration objects that specify what to generate. They fo
 Generated outputs including:
 - .NET projects and solutions
 - AWS SAM templates
-- Lambda function code
+- ASP.NET Core containerized applications
+- Dockerfiles for container builds
 - Client SDK libraries
 - Database repositories
 
@@ -134,22 +135,34 @@ UserModule:
 ```
 
 ### Container Directives
-Generate Lambda functions:
-- **DotNetApiLambdaProject** - Lambda function code 
-- **AwsApiLambdaResource** - SAM template resource
+Generate ASP.NET Core applications for AWS App Runner:
+- **AspDotNetProject** - ASP.NET Core application with Dockerfile
+- **AwsAppRunnerResource** - SAM template resource for App Runner service
 
 ```yaml
-UserLambda:
+UserContainer:
   Type: Container
-  Defaults: AwsApiLambdaContainerDefault
+  Defaults: AwsAppRunnerContainerDefault
   Modules:
   - UserModule
+  Artifacts:
+    AspDotNetProject:
+      NameSuffix: "Service"
+    AwsAppRunnerResource:
+      NameSuffix: "Service"
+      Cpu: 1024        # 1 vCPU
+      Memory: 2048     # 2 GB
+      Port: 8080
+      ManagedPolicyArns:
+      - "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
 ```
 
 ### Api Directives
-Generate API Gateway configurations:
-- **AwsHttpApiResource** - HTTP API resource
-- **DotNetHttpApiSDKProject** - Client SDK
+Reserved for future AWS ALB + Fargate support:
+- **AwsApiAppRunnerResource** - Placeholder for future API configurations
+- **AspDotNetApiSDKProject** - Client SDK
+
+Currently, App Runner services handle their own routing and HTTPS endpoints without requiring separate API Gateway resources.
 
 ```yaml
 UserApi:
@@ -157,7 +170,7 @@ UserApi:
   Defaults: ApiDefault
   Authentication: JwtAuth
   Containers:
-  - UserLambda
+  - UserContainer
 ```
 
 ### Authentication Directives
@@ -202,9 +215,10 @@ Service:
 - Determines schema dependencies
 
 ### 3. Container Processing
-- Creates Lambda function projects
-- Configures module hosting
-- Generates AWS SAM resources
+- Creates ASP.NET Core application projects
+- Configures module hosting with dependency injection
+- Generates Dockerfiles for containerization
+- Generates AWS App Runner SAM resources
 
 ### 4. Service Assembly
 - Combines all components into deployable templates
@@ -270,17 +284,27 @@ ProductModule:
 
 ### Containers
 ```yaml
-CustomerLambda:
+CustomerContainer:
   Type: Container
-  Defaults: AwsApiLambdaContainerDefault
+  Defaults: AwsAppRunnerContainerDefault
   Modules:
   - CustomerModule
+  Artifacts:
+    AspDotNetProject:
+      NameSuffix: "Service"
+    AwsAppRunnerResource:
+      NameSuffix: "Service"
 
-ProductLambda:
+ProductContainer:
   Type: Container
-  Defaults: AwsApiLambdaContainerDefault
+  Defaults: AwsAppRunnerContainerDefault
   Modules:
   - ProductModule
+  Artifacts:
+    AspDotNetProject:
+      NameSuffix: "Service"
+    AwsAppRunnerResource:
+      NameSuffix: "Service"
 ```
 
 ### APIs
@@ -290,13 +314,13 @@ CustomerApi:
   Defaults: ApiDefault
   Authentication: CustomerAuth
   Containers:
-  - CustomerLambda
+  - CustomerContainer
 
 ProductApi:
   Type: Api
   Defaults: ApiDefault
   Containers:
-  - ProductLambda
+  - ProductContainer
 ```
 
 ### Service
@@ -312,11 +336,11 @@ ECommerceService:
 
 This configuration generates:
 - **CustomerSchema** & **CustomerRepo** projects with DTOs and DynamoDB operations
-- **ProductSchema** & **ProductRepo** projects with DTOs and DynamoDB operations  
+- **ProductSchema** & **ProductRepo** projects with DTOs and DynamoDB operations
 - **CustomerModule** & **ProductModule** projects with API controllers
-- **CustomerLambda** & **ProductLambda** projects hosting the modules
+- **CustomerContainerService** & **ProductContainerService** ASP.NET Core projects with Dockerfiles
 - **CustomerApi** & **ProductApi** client SDKs
-- AWS SAM templates for complete infrastructure deployment
+- AWS SAM templates with App Runner service definitions for complete infrastructure deployment
 
 ## Advanced Features
 
@@ -340,9 +364,36 @@ Version is centrally managed in `Version.props`. The GitHub Actions workflow aut
 
 - **Consistency** - All generated code follows the same patterns
 - **Maintainability** - Changes to OpenAPI specs automatically propagate
-- **Scalability** - Each component can scale independently  
+- **Scalability** - App Runner handles auto-scaling automatically
 - **Testability** - Clear separation of concerns enables comprehensive testing
-- **Deployability** - Complete AWS infrastructure as code
+- **Deployability** - Complete AWS infrastructure as code with SAM
 - **Type Safety** - Strong typing throughout the entire stack
+- **Simplicity** - Container-based deployment is easier than Lambda + API Gateway
+- **Local Development** - ASP.NET Core applications run locally without special tooling
 
-LazyMagic MDD transforms the traditional approach to serverless development by generating consistent, maintainable, and scalable applications from declarative specifications, significantly reducing boilerplate code and development time while ensuring architectural consistency.
+## Architectural Shift: Lambda to App Runner
+
+LazyMagic v3.x moved from AWS Lambda + API Gateway to AWS App Runner for several key reasons:
+
+### Benefits of App Runner
+1. **Simpler Architecture** - App Runner services are self-contained with built-in HTTPS endpoints
+2. **Standard ASP.NET** - Use familiar ASP.NET Core patterns without Lambda-specific code
+3. **Better Local Development** - Test containerized applications locally exactly as they'll run in production
+4. **Easier Debugging** - Standard debugging tools work without Lambda emulation
+5. **Auto-scaling** - Built-in scaling without configuring API Gateway throttling
+6. **Cost Efficiency** - Pay for actual usage without API Gateway per-request charges
+
+### What Changed
+- **Container Artifact**: `AspDotNetProject` replaces Lambda-specific projects
+- **AWS Resource**: `AwsAppRunnerResource` replaces Lambda + API Gateway resources
+- **Deployment**: Docker images pushed to ECR instead of Lambda ZIP files
+- **Routing**: App Runner handles routing natively instead of API Gateway integration
+
+### Future Plans
+The Api directive is reserved for implementing AWS Application Load Balancer + Fargate for scenarios requiring:
+- More granular control over networking
+- VPC-internal APIs
+- Advanced load balancing features
+- Higher request volumes
+
+LazyMagic MDD transforms cloud application development by generating consistent, maintainable, and scalable applications from declarative specifications, significantly reducing boilerplate code and development time while ensuring architectural consistency.

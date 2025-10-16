@@ -15,13 +15,14 @@ namespace LazyMagic
     /// format and available in the ExportedAwsResourceDefinition string property.
     /// Note: This is for AppSync Events (not GraphQL).
     /// </summary>
-    public class AwsAppSyncEventsResource : ArtifactBase, IAwsApiResource
+    public class AwsAppSyncEventsResource : AwsResourceArtifact, IAwsApiResource
     {
         public override string Template { get; set; } = "AWSTemplates/Snippets/sam.service.appsync-events.yaml";
         public string ExportedAwsResourceName { get; set; } = null;
         public string ExportedAwsResourceDefinition { get; set; } = null;
         public string ExportedPath { get; set; } = null;
         public string ExportedPrefix { get; set; } = null;
+        public string ExportedResourceType { get; set; } = null;
 
         // AppSync Events specific configuration
         public string EventSourceName { get; set; } = "SessionEvents";
@@ -84,13 +85,13 @@ namespace LazyMagic
                 templateBuilder.Replace("#CognitoSubscribeAuth#", cognitoSubscribeAuth);
 
                 // Get App Runner project artifacts for channel definitions
-                var appRunnerArtifacts = solution.Directives.GetArtifactsByType<DotNetAppRunnerProject>(directive.Containers);
+                var appRunnerArtifacts = solution.Directives.GetArtifactsByType<AspDotNetProject>(directive.Containers);
 
                 // Generate event channel configurations based on connected containers
                 var channelConfig = new StringBuilder();
                 foreach (var appRunnerArtifact in appRunnerArtifacts)
                 {
-                    var appRunnerProject = (DotNetAppRunnerProject)appRunnerArtifact;
+                    var appRunnerProject = (AspDotNetProject)appRunnerArtifact;
                     if (string.IsNullOrEmpty(appRunnerProject.ExportedName)) continue;
 
                     // Add channel configuration for this container
@@ -105,7 +106,24 @@ namespace LazyMagic
                 ExportedAwsResourceName = resourceName;
                 ExportedAwsResourceDefinition = templateBuilder.ToString();
                 ExportedPrefix = apiPrefix;
-            }
+                ExportedResourceType = "AppSyncEvents";
+
+                StackOutputs.Add($@"
+  {ExportedAwsResourceName}Auth:
+    Value: {cognitoResource}
+");
+                StackOutputs.Add($@"
+  {ExportedAwsResourceName}HttpDomain:
+    Value: !GetAtt {ExportedAwsResourceName}.Dns.Http
+");
+
+            StackOutputs.Add($@"
+  {ExportedAwsResourceName}ApiKey:
+    Value: !GetAtt {ExportedAwsResourceName}ApiKey.ApiKey
+");
+        
+
+        }
             catch (Exception ex)
             {
                 throw new Exception($"Error generating {nameof(AwsAppSyncEventsResource)}: {resourceName}, {ex.Message}");

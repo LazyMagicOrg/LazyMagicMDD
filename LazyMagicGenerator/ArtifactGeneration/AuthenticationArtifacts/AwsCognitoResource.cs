@@ -15,9 +15,9 @@ namespace LazyMagic
     /// inclusion in an AWS SAM template. The resource is in 
     /// yaml format and available in the ExportedAwsResourceDefinition string property.
     /// </summary>
-    public class AwsCognitoResource : ArtifactBase
+    public class AwsCognitoResource : AwsResourceArtifact
     {
-        public override string Template { get; set; } = "AWSTemplates/Templates/sam.cognito.tenant.yaml";
+        public override string Template { get; set; } = "";
         public string CallbackURL { get; set; } = "https://www.example.com";
         public string LogoutURL { get; set; } = "https://www.example.com";
         public int DeleteAfterDays { get; set; } = 60;
@@ -60,6 +60,28 @@ namespace LazyMagic
             };
 
             ExportedName = directive.Key;
+
+            // StackParameters - these are parameters that will need to be passed to the service stack.
+            // These parameters are gathered from the deployed authentication resources by Deploy-ServiceAws 
+            // The Service Stack Parameters are outputs from the Auth Stack.
+            StackParameters = new List<string>()
+            {
+                $@"
+  {ExportedName}UserPoolIdParameter:
+    Type: String",
+                $@"
+  {ExportedName}UserPoolClientIdParameter:
+    Type: String",
+                $@"
+  {ExportedName}IdentityPoolIdParameter:
+    Type: String",
+                $@"
+  {ExportedName}SecurityLevelParameter:
+    Type: String",
+                $@"
+  {ExportedName}UserPoolArnParameter:
+    Type: String"
+            };
         }
     }
 }

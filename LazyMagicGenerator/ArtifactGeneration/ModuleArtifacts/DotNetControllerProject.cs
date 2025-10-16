@@ -168,7 +168,7 @@ namespace LazyMagic
 
                 // Clean it up to make it readable.
                 var scratchpad = root.ToFullString();
-                code = scratchpad.Replace($"partial class {projectName}Controller",$"abstract class {projectName}ControllerBase")
+                code = scratchpad.Replace($"partial class {projectName}Controller",$"abstract partial class {projectName}ControllerBase")
                     .Replace(": Microsoft.AspNetCore.Mvc.ControllerBase",$": Controller, I{projectName}Controller")
                     .Replace("Microsoft.AspNetCore.Mvc.","") // Just a cosmetic. Improves readability.
                     .Replace("System.Threading.Tasks.",""); // Just a cosmetic. Improves readability.

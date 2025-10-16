@@ -56,7 +56,6 @@ namespace LazyMagic
 
                 var apiDirectives = new Dictionary<string, Api>();
                 var containerDirectives = new Dictionary<string, Container>();
-                var lambdaArtifacts = new List<DotNetApiLambdaProject>();
                 var containerPrefixes = new List<string>();
                 var moduleDirectives = new Dictionary<string, Module>();
                 var controllerArtifacts = new List<DotNetControllerProject>();
@@ -73,9 +72,6 @@ namespace LazyMagic
                     {
                         if (containerDirectives.ContainsKey(containerDirectiveBase.Key)) continue;
                         containerPrefixes.Add(((Container)containerDirectiveBase).ApiPrefix ?? containerDirectiveBase.Key);
-                        var _lambdaArtifactBases = solution.Directives.GetArtifactsByType<DotNetApiLambdaProject>(containerDirectiveBase.Key);
-                        foreach (var lambdaArtifactBase in _lambdaArtifactBases)
-                            lambdaArtifacts.Add((DotNetApiLambdaProject)lambdaArtifactBase);
 
                         containerDirectives.Add(containerDirectiveBase.Key, (Container)containerDirectiveBase);
                         var moduleDirectiveBases = solution.Directives.GetDirectivesByName(((Container)containerDirectiveBase).Modules);
@@ -90,13 +86,11 @@ namespace LazyMagic
                     }
                 }
                 var controllerArtifactBases = controllerArtifacts.Cast<ArtifactBase>().ToList();
-                var lambdaArtifactBases = lambdaArtifacts.Cast<ArtifactBase>().ToList();
 
                 // Get Dependencies
                 ProjectReferences.AddRange(GetExportedProjectReferences(controllerArtifactBases));
                 PackageReferences.AddRange(GetExportedPackageReferences(controllerArtifactBases));
                 GlobalUsings.AddRange(GetExportedGlobalUsings(controllerArtifactBases));
-                //GlobalUsings.AddRange(GetExportedGlobalUsings(lambdaArtifactBases));
                 GlobalUsings = GlobalUsings.Distinct().ToList();
                 ServiceRegistrations.AddRange(GetExportedServiceRegistrations(controllerArtifactBases));
 

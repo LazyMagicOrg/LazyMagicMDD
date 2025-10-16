@@ -10,5 +10,6 @@ namespace LazyMagic
         string ExportedAwsResourceDefinition { get; set; }
         string ExportedPath { get; set; }
         string ExportedPrefix { get; set; }
+        string ExportedResourceType { get; set; }
     }
 }

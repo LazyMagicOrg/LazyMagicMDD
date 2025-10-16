@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(find:*)",
-      "Bash(dotnet test:*)"
+      "Bash(dotnet test:*)",
+      "Read(//mnt/c/Users/TimothyMay/repos/_Dev/**)",
+      "Read(//mnt/c/Users/TimothyMay/repos/**)",
+      "Bash(dotnet build:*)"
     ],
     "deny": []
   }

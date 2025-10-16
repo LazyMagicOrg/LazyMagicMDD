@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Routing.Template;
 namespace LazyMagic
 {
 
-    public class AwsSQSResource : ArtifactBase
+    public class AwsSQSResource : AwsResourceArtifact
     {
         public override string Template { get; set; } = "AWSTemplates/Snippets/sam.service.messaging.sqs.yaml";
         public string ExportedContainerKey { get; set; } = null;

@@ -10,10 +10,10 @@ using System.Text;
 
 namespace LazyMagic
 {
-    public class DotNetAppRunnerProject : DotNetProjectBase
+    public class AspDotNetProject : DotNetProjectBase
     {
         #region Properties
-        public override string Template { get; set; } = "ProjectTemplates/AppRunner";
+        public override string Template { get; set; } = "ProjectTemplates/AspDotNetHost";
         public string ExportedApiPrefix { get; set; } = "";
         public string ExportedOpenApiSpec { get; set; } = "";
         public string ExportedImageUri { get; set; } = "";
@@ -161,7 +161,7 @@ COPY [""Directory.Packages.props"", "".""]
 COPY [""Directory.Build.props"", "".""]
 COPY [""CommonPackageHandling.targets"", "".""]
 COPY [""ServiceVersion.props"", "".""]
-COPY [""nuget.config"", "".""]
+COPY [""{containerRelativePath}/Nuget.Config.Docker"", ""./nuget.config""]
 
 # Copy NuGet packages prepared by Deploy-DockerAws
 COPY [""DockerPackages/"", ""DockerPackages/""]

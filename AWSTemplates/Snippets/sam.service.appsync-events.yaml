@@ -6,11 +6,14 @@
       EventConfig:
         ConnectionAuthModes:
           - AuthType: AWS_IAM
+          - AuthType: API_KEY
 #CognitoAuth#
         DefaultPublishAuthModes:
           - AuthType: AWS_IAM
+          - AuthType: API_KEY
         DefaultSubscribeAuthModes:
           - AuthType: AWS_IAM
+#CognitoAuth#
       LogConfig:
         CloudWatchLogsRoleArn: !GetAtt __AppSyncEventsApiName__LogRole.Arn
         FieldLogLevel: ALL
@@ -19,6 +22,15 @@
           Value: !Ref EnvironmentParameter
         - Key: Service
           Value: __AppSyncEventsApiName__
+
+  __AppSyncEventsApiName__ApiKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt __AppSyncEventsApiName__.ApiId
+      Description: !Sub "API Key for ${AWS::StackName}-__AppSyncEventsApiName__"
+      Expires: !Sub
+        - "${ExpirationTime}"
+        - ExpirationTime: !Select [0, !Split [".", !Select [1, !Split ["T", !Sub "${AWS::StackName}-${AWS::AccountId}-365days"]]]]
 
   __AppSyncEventsApiName__LogRole:
     Type: AWS::IAM::Role
