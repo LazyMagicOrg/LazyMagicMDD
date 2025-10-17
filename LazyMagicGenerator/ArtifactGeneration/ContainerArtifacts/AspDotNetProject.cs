@@ -74,9 +74,6 @@ namespace LazyMagic
 
                 GenerateConfigureSvcsFile(projectName, nameSpace, Path.Combine(targetProjectDir, "ConfigureSvcs.g.cs"));
 
-                // Generate Dockerfile for App Runner
-                GenerateDockerfile(targetProjectDir, projectName);
-
                 // Exports
                 ProjectFilePath = Path.Combine(OutputFolder, projectName, projectName + ".csproj");
                 ExportedGlobalUsings = GlobalUsings;
@@ -142,56 +139,6 @@ public partial class Startup
 
             File.WriteAllText(filePath, template);
         }
-
-        private void GenerateDockerfile(string targetProjectDir, string projectName)
-        {
-            // Build context is expected to be the Service directory (parent of Containers folder)
-            // So paths must be relative to Service directory
-            var containerRelativePath = $"Containers/{projectName}";
-
-            var dockerfileContent = $@"FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
-WORKDIR /app
-EXPOSE 8080
-
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /src
-
-# Copy shared build configuration files
-COPY [""Directory.Packages.props"", "".""]
-COPY [""Directory.Build.props"", "".""]
-COPY [""CommonPackageHandling.targets"", "".""]
-COPY [""ServiceVersion.props"", "".""]
-COPY [""{containerRelativePath}/Nuget.Config.Docker"", ""./nuget.config""]
-
-# Copy NuGet packages prepared by Deploy-DockerAws
-COPY [""DockerPackages/"", ""DockerPackages/""]
-
-# Copy project file and restore
-COPY [""{containerRelativePath}/{projectName}.csproj"", ""{projectName}/""]
-WORKDIR /src/{projectName}
-RUN dotnet restore ""{projectName}.csproj""
-
-# Copy all container source files
-WORKDIR /src
-COPY [""{containerRelativePath}/"", ""{projectName}/""]
-
-# Copy all referenced projects (Modules, Schemas, etc.)
-COPY [""Modules/"", ""Modules/""]
-COPY [""Schemas/"", ""Schemas/""]
-
-# Build
-WORKDIR /src/{projectName}
-RUN dotnet build ""{projectName}.csproj"" -c Release -o /app/build
-
-FROM build AS publish
-RUN dotnet publish ""{projectName}.csproj"" -c Release -o /app/publish
-
-FROM base AS final
-WORKDIR /app
-COPY --from=publish /app/publish .
-ENTRYPOINT [""dotnet"", ""{projectName}.dll""]";
-
-            File.WriteAllText(Path.Combine(targetProjectDir, "Dockerfile"), dockerfileContent);
-        }
     }
+
 }
