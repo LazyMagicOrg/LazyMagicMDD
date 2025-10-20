@@ -113,7 +113,7 @@ namespace LazyMagic
     Value: {cognitoResource}
 ");
                 StackOutputs.Add($@"
-  {ExportedAwsResourceName}HttpDomain:
+  {ExportedAwsResourceName}Domain:
     Value: !GetAtt {ExportedAwsResourceName}.Dns.Http
 ");
 
