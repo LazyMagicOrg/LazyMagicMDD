@@ -13,7 +13,8 @@ namespace LazyMagic
         #region Properties
         public List<string> OpenApiSpecs { get; set; } = new List<string>();
         public List<string> Containers { get; set; } = new List<string>();
-        public string Authentication { get; set; } = null;
+        public string Authentication { get; set; } = null; // Deprecated: Use Authenticators for multi-auth support
+        public List<string> Authenticators { get; set; } = new List<string>();
         #endregion
 
         public async Task ProcessAsync( LzSolution solution)

@@ -9,10 +9,7 @@
           ImageConfiguration:
             Port: __Port__
             RuntimeEnvironmentVariables:
-              - Name: ASPNETCORE_ENVIRONMENT
-                Value: !Ref EnvironmentParameter
-              - Name: AWS_REGION
-                Value: !Ref AWS::Region
+__RuntimeEnvironmentVariables__
           ImageRepositoryType: ECR
         AutoDeploymentsEnabled: true
       InstanceConfiguration:
