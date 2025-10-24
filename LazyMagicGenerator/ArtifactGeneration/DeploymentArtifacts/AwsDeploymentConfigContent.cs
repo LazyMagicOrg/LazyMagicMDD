@@ -52,12 +52,13 @@ namespace LazyMagic
         }
 
         private List<AwsCognitoResource> GetAwsCognitoResources(SolutionBase solution, Service directive) =>
-           directive.Apis
-               .Select(x => solution.Directives[x].Cast<Api>())
-               .Where(api => api.Authentication != null)
-               .Select(api => (AwsCognitoResource)solution.Directives[api.Authentication].Artifacts.Values.First())
-               .Distinct()
-               .ToList();
+            directive.Apis
+                .Select(x => solution.Directives[x].Cast<Api>())
+                .Where(api => api.Authenticators != null && api.Authenticators.Any())
+                .SelectMany(api => api.Authenticators
+                    .Select(auth => (AwsCognitoResource)solution.Directives[auth].Artifacts.Values.First()))
+                .Distinct()
+                .ToList();
 
         private List<AwsServiceStackTemplate> GetAwsServiceStacks(SolutionBase solution) =>
             solution.Directives.Values

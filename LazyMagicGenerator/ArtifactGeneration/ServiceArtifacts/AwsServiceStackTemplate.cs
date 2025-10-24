@@ -188,8 +188,9 @@ namespace LazyMagic
 
             // Get Authentication resources from Api directives
             var authResources = apiDirectives
-                .Where(api => api.Authentication != null)
-                .Select(api => solution.Directives[api.Authentication])
+                .Where(api => api.Authenticators != null && api.Authenticators.Any())
+                .SelectMany(api => api.Authenticators)
+                .Select(authKey => solution.Directives[authKey])
                 .SelectMany(auth => auth.Artifacts.Values.OfType<AwsResourceArtifact>())
                 .Distinct()
                 .ToList();

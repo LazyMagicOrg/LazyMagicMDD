@@ -43,7 +43,16 @@ namespace LazyMagic
 
                 var template = Template;
 
-                var cognitoResource = directive.Authentication;
+                if(directive.Authenticators.Count == 0)
+                {
+                    throw new Exception($"AppSync Events API {directive.Key} must specify at least one authenticator.");
+                }   
+                if(directive.Authenticators.Count > 1)
+                {
+                    throw new Exception($"AppSync Events API {directive.Key} currently supports only one authenticator.");
+                }
+
+                var cognitoResource = directive.Authenticators.FirstOrDefault();
 
                 // Read template and generate
                 var templateBuilder = new StringBuilder();

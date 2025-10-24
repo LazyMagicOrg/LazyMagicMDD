@@ -129,11 +129,6 @@ namespace LazyMagic
                 {
                     authenticators.AddRange(api.Authenticators);
                 }
-                // Fall back to legacy Authentication property for backward compatibility
-                else if (!string.IsNullOrEmpty(api.Authentication))
-                {
-                    authenticators.Add(api.Authentication);
-                }
             }
 
             return authenticators.Distinct().ToList();
