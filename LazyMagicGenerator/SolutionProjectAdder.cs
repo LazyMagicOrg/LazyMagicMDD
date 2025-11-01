@@ -199,20 +199,23 @@ namespace LazyMagic
             {
                 // Read the solution file
                 var solutionContent = File.ReadAllText(_solutionPath);
+                var solutionDir = Path.GetDirectoryName(_solutionPath);
 
                 // Generate a GUID for the folder
-                var folderGuid = Guid.NewGuid().ToString("B").ToUpperInvariant();
                 var folderTypeGuid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}"; // Solution Folder type GUID
 
                 // Check if the folder already exists
-                if (!solutionContent.Contains($"\") = \"{folderName}\", \"{folderName}\", \""))
+                var folderPattern = $"\") = \"{folderName}\", \"{folderName}\", \"";
+                var folderExists = solutionContent.Contains(folderPattern);
+
+                if (!folderExists)
                 {
-                    // Add the folder
+                    // Folder doesn't exist - create it with all files
+                    var folderGuid = Guid.NewGuid().ToString("B").ToUpperInvariant();
                     var projectsSection = "Global\r\n\tGlobalSection(SolutionConfigurationPlatforms)";
 
                     // Add all files to the ProjectSection
                     var projectSectionContent = "\tProjectSection(SolutionItems) = preProject\r\n";
-                    var solutionDir = Path.GetDirectoryName(_solutionPath);
                     foreach (var file in filesToAdd)
                     {
                         var relativePath = GetRelativePath(solutionDir, file);
@@ -226,6 +229,44 @@ namespace LazyMagic
 
                     // Write back to the solution file
                     File.WriteAllText(_solutionPath, solutionContent);
+                }
+                else
+                {
+                    // Folder exists - add only new files to existing folder
+                    // Find the folder's ProjectSection
+                    var folderStartPattern = $"Project(\"{folderTypeGuid}\") = \"{folderName}\", \"{folderName}\",";
+                    var folderStartIndex = solutionContent.IndexOf(folderStartPattern);
+
+                    if (folderStartIndex == -1)
+                        throw new Exception($"Could not find folder '{folderName}' in solution file.");
+
+                    // Find the ProjectSection for this folder
+                    var projectSectionStart = solutionContent.IndexOf("ProjectSection(SolutionItems) = preProject", folderStartIndex);
+                    var projectSectionEnd = solutionContent.IndexOf("EndProjectSection", projectSectionStart);
+
+                    if (projectSectionStart == -1 || projectSectionEnd == -1)
+                        throw new Exception($"Could not find ProjectSection for folder '{folderName}'.");
+
+                    // Get existing files in the section
+                    var existingSection = solutionContent.Substring(projectSectionStart, projectSectionEnd - projectSectionStart);
+
+                    // Build list of new files to add (only those not already in the section)
+                    var newFilesContent = "";
+                    foreach (var file in filesToAdd)
+                    {
+                        var relativePath = GetRelativePath(solutionDir, file);
+                        if (!existingSection.Contains(relativePath))
+                        {
+                            newFilesContent += $"\t\t{relativePath} = {relativePath}\r\n";
+                        }
+                    }
+
+                    // If there are new files, add them before EndProjectSection
+                    if (!string.IsNullOrEmpty(newFilesContent))
+                    {
+                        solutionContent = solutionContent.Insert(projectSectionEnd, newFilesContent);
+                        File.WriteAllText(_solutionPath, solutionContent);
+                    }
                 }
             }
             catch (Exception ex)
