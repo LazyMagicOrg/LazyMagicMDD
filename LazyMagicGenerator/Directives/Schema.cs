@@ -1,6 +1,7 @@
 ﻿using FluentValidation;
 using NSwag;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 
 namespace LazyMagic
@@ -51,11 +52,14 @@ namespace LazyMagic
         {
             base.Validate(directives);
         }
+
+        public override async Task GenerateAsync(SolutionBase solution) => await base.GenerateAsync(solution);
         
     }
     public class SchemaValidator : AbstractValidator<Schema>
     {
         public SchemaValidator() { }
     }
+         
 
 }

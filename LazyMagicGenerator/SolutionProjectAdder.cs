@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace LazyMagic
 {
@@ -34,6 +35,29 @@ namespace LazyMagic
             catch (Exception ex)
             {
                 throw new SolutionModificationException("An error occurred while adding missing projects.", ex);
+            }
+        }
+
+        /// <summary>
+        /// Fixes projects that exist in the solution but are in the wrong solution folder.
+        /// </summary>
+        public void FixMisplacedProjects()
+        {
+            try
+            {
+                var misplacedProjects = FindMisplacedProjects();
+                if (misplacedProjects.Count == 0)
+                {
+                    Console.WriteLine("No misplaced projects found.");
+                    return;
+                }
+
+                MoveProjectsToCorrectFolders(misplacedProjects);
+                Console.WriteLine($"Fixed {misplacedProjects.Count} misplaced projects.");
+            }
+            catch (Exception ex)
+            {
+                throw new SolutionModificationException("An error occurred while fixing misplaced projects.", ex);
             }
         }
 
@@ -71,8 +95,8 @@ namespace LazyMagic
         /// Gets all LazyMagic projects in the solution directory that are not currently in the solution.
         /// This method can be used by the Visual Studio extension for folder-based discovery.
         /// </summary>
-        /// <returns>List of project file paths that need to be added to the solution</returns>
-        public List<string> GetMissingProjects()
+        /// <returns>Dictionary mapping project file paths to their solution folder names</returns>
+        public Dictionary<string, string> GetMissingProjects()
         {
             try
             {
@@ -89,7 +113,7 @@ namespace LazyMagic
         {
             try
             {
-                var output = ExecuteDotnetCommand("sln", $"\"{_solutionPath}\" list");
+                var output = ExecuteDotnetCommand("sln", $"{_solutionPath} list");
                 _existingProjects = output
                     .Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries)
                     .Skip(2) // Skip the first two lines (header)
@@ -102,14 +126,19 @@ namespace LazyMagic
             }
         }
 
-        private List<string> FindMissingProjects()
+        private Dictionary<string, string> FindMissingProjects()
         {
             try
             {
                 var solutionDir = Path.GetDirectoryName(_solutionPath);
                 var allProjects = GetProjectsInLazyMagicFolders(solutionDir);
 
-                return allProjects.Except(_existingProjects).ToList();
+                // Filter out projects that already exist in the solution
+                var missingProjects = allProjects
+                    .Where(kvp => !_existingProjects.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                return missingProjects;
             }
             catch (IOException ex)
             {
@@ -121,7 +150,7 @@ namespace LazyMagic
             }
         }
 
-        private List<string> GetProjectsInLazyMagicFolders(string solutionDir)
+        private Dictionary<string, string> GetProjectsInLazyMagicFolders(string solutionDir)
         {
             // Define LazyMagic output folders to scan
             var lazyMagicFolders = new[] 
@@ -134,7 +163,8 @@ namespace LazyMagic
                 "Services"
             };
 
-            var allProjects = new List<string>();
+            // Dictionary maps project path to solution folder name
+            var allProjects = new Dictionary<string, string>();
 
             foreach (var folder in lazyMagicFolders)
             {
@@ -144,7 +174,10 @@ namespace LazyMagic
                     var projectsInFolder = Directory.GetFiles(folderPath, "*.csproj", SearchOption.AllDirectories)
                                                    .Select(p => Path.GetFullPath(p))
                                                    .ToList();
-                    allProjects.AddRange(projectsInFolder);
+                    foreach (var project in projectsInFolder)
+                    {
+                        allProjects[project] = folder;
+                    }
                 }
             }
 
@@ -275,7 +308,7 @@ namespace LazyMagic
             }
         }
 
-        private void AddProjectsToSolution(List<string> projectsToAdd)
+        private void AddProjectsToSolution(Dictionary<string, string> projectsToAdd)
         {
             if (projectsToAdd == null || projectsToAdd.Count == 0)
             {
@@ -285,10 +318,12 @@ namespace LazyMagic
 
             try
             {
-                foreach (var project in projectsToAdd)
+                foreach (var kvp in projectsToAdd)
                 {
-                    var relativePath = GetRelativePath(Path.GetDirectoryName(_solutionPath), project);
-                    ExecuteDotnetCommand("sln", $"\"{_solutionPath}\" add \"{relativePath}\"");
+                    var projectPath = kvp.Key;
+                    var solutionFolder = kvp.Value;
+                    var relativePath = GetRelativePath(Path.GetDirectoryName(_solutionPath), projectPath);
+                    ExecuteDotnetCommand("sln", $"{_solutionPath} add {relativePath} --solution-folder {solutionFolder}");
                 }
 
                 Console.WriteLine($"Added {projectsToAdd.Count} projects to the solution.");
@@ -300,13 +335,138 @@ namespace LazyMagic
         }
 
         /// <summary>
+        /// Finds projects that are in the solution but in the wrong solution folder.
+        /// </summary>
+        /// <returns>Dictionary mapping project paths to their expected solution folder names</returns>
+        private Dictionary<string, string> FindMisplacedProjects()
+        {
+            var solutionDir = Path.GetDirectoryName(_solutionPath);
+            var expectedFolders = GetProjectsInLazyMagicFolders(solutionDir);
+            var currentFolders = ParseSolutionProjectFolders();
+            var misplacedProjects = new Dictionary<string, string>();
+
+            foreach (var kvp in expectedFolders)
+            {
+                var projectPath = kvp.Key;
+                var expectedFolder = kvp.Value;
+
+                if (currentFolders.TryGetValue(projectPath, out var currentFolder))
+                {
+                    // Project exists in solution - check if it's in the correct folder
+                    if (!string.Equals(currentFolder, expectedFolder, StringComparison.OrdinalIgnoreCase))
+                    {
+                        misplacedProjects[projectPath] = expectedFolder;
+                    }
+                }
+            }
+
+            return misplacedProjects;
+        }
+
+        /// <summary>
+        /// Parses the solution file to extract project-to-folder mappings.
+        /// </summary>
+        /// <returns>Dictionary mapping project paths to their current solution folder names (empty string if at root)</returns>
+        private Dictionary<string, string> ParseSolutionProjectFolders()
+        {
+            var solutionContent = File.ReadAllText(_solutionPath);
+            var solutionDir = Path.GetDirectoryName(_solutionPath);
+            var projectToFolder = new Dictionary<string, string>();
+
+            // Parse all projects and folders with their GUIDs
+            // Project("{GUID}") = "Name", "Path", "{ProjectGUID}"
+            var projectPattern = new Regex(
+                @"Project\(""\{([^}]+)\}""\)\s*=\s*""([^""]+)"",\s*""([^""]+)"",\s*""\{([^}]+)\}""",
+                RegexOptions.Multiline);
+
+            var folderTypeGuid = "2150E333-8FDC-42A3-9474-1A3956D46DE8"; // Solution Folder type GUID
+            var projectGuids = new Dictionary<string, string>(); // Maps project GUID to project path
+            var folderGuids = new Dictionary<string, string>(); // Maps folder GUID to folder name
+
+            foreach (Match match in projectPattern.Matches(solutionContent))
+            {
+                var typeGuid = match.Groups[1].Value.ToUpperInvariant();
+                var name = match.Groups[2].Value;
+                var path = match.Groups[3].Value;
+                var projectGuid = match.Groups[4].Value.ToUpperInvariant();
+
+                if (typeGuid == folderTypeGuid)
+                {
+                    // This is a solution folder
+                    folderGuids[projectGuid] = name;
+                }
+                else if (path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                {
+                    // This is a project - normalize path separators for cross-platform compatibility
+                    var normalizedPath = path.Replace('\\', Path.DirectorySeparatorChar);
+                    var fullPath = Path.GetFullPath(Path.Combine(solutionDir, normalizedPath));
+                    projectGuids[projectGuid] = fullPath;
+                    projectToFolder[fullPath] = ""; // Default to root (no folder)
+                }
+            }
+
+            // Parse NestedProjects section to find folder assignments
+            // {ProjectGUID} = {FolderGUID}
+            var nestedPattern = new Regex(
+                @"\{([^}]+)\}\s*=\s*\{([^}]+)\}",
+                RegexOptions.Multiline);
+
+            var nestedSectionMatch = Regex.Match(solutionContent, 
+                @"GlobalSection\(NestedProjects\)\s*=\s*preSolution(.*?)EndGlobalSection",
+                RegexOptions.Singleline);
+
+            if (nestedSectionMatch.Success)
+            {
+                var nestedSection = nestedSectionMatch.Groups[1].Value;
+                foreach (Match match in nestedPattern.Matches(nestedSection))
+                {
+                    var childGuid = match.Groups[1].Value.ToUpperInvariant();
+                    var parentGuid = match.Groups[2].Value.ToUpperInvariant();
+
+                    // If the child is a project and parent is a folder, record the mapping
+                    if (projectGuids.TryGetValue(childGuid, out var projectPath) &&
+                        folderGuids.TryGetValue(parentGuid, out var folderName))
+                    {
+                        projectToFolder[projectPath] = folderName;
+                    }
+                }
+            }
+
+            return projectToFolder;
+        }
+
+        /// <summary>
+        /// Moves projects to their correct solution folders by removing and re-adding them.
+        /// </summary>
+        private void MoveProjectsToCorrectFolders(Dictionary<string, string> projectsToMove)
+        {
+            var solutionDir = Path.GetDirectoryName(_solutionPath);
+
+            foreach (var kvp in projectsToMove)
+            {
+                var projectPath = kvp.Key;
+                var targetFolder = kvp.Value;
+                var relativePath = GetRelativePath(solutionDir, projectPath);
+
+                // Remove the project from the solution
+                ExecuteDotnetCommand("sln", $"{_solutionPath} remove {relativePath}");
+
+                // Re-add it to the correct folder
+                ExecuteDotnetCommand("sln", $"{_solutionPath} add {relativePath} --solution-folder {targetFolder}");
+
+                Console.WriteLine($"Moved {Path.GetFileName(projectPath)} to {targetFolder} folder.");
+            }
+        }
+
+        /// <summary>
         /// Helper method to get relative path (replacement for Path.GetRelativePath which is not available in .NET Standard 2.0)
         /// </summary>
         private string GetRelativePath(string basePath, string fullPath)
         {
-            var baseUri = new Uri(basePath.EndsWith("\\") ? basePath : basePath + "\\");
+            var separator = Path.DirectorySeparatorChar;
+            var baseUri = new Uri(basePath.EndsWith(separator.ToString()) ? basePath : basePath + separator);
             var fullUri = new Uri(fullPath);
-            return Uri.UnescapeDataString(baseUri.MakeRelativeUri(fullUri).ToString().Replace('/', '\\'));
+            return Uri.UnescapeDataString(baseUri.MakeRelativeUri(fullUri).ToString().Replace('/', separator));
         }
 
         private string ExecuteDotnetCommand(string command, string arguments)
@@ -320,7 +480,8 @@ namespace LazyMagic
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    WorkingDirectory = Path.GetDirectoryName(_solutionPath)
                 };
 
                 using (var process = Process.Start(startInfo))

@@ -11,6 +11,10 @@
     "Dev BCSvc": {
       "commandName": "Project",
       "workingDirectory": "C:\\Users\\TimothyMay\\repos\\_Dev\\BCProjects\\Service"
+    },
+    "Dev MonroSvc": {
+      "commandName": "Project",
+      "workingDirectory": "C:\\Users\\TimothyMay\\repos\\_Dev\\Monro\\Service"
     }
   }
 }
