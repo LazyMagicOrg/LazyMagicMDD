@@ -25,6 +25,7 @@ namespace LazyMagic
         public override string NameSuffix { get; set; } = "";
         public override string Template { get; set; } = "ProjectTemplates/Schema";
         public override string OutputFolder { get; set; } = "Schemas";
+        public bool UseIItemInterface { get; set; } = true;
 
         public List<string> ExportedEntities { get; set; } = new List<string>();
        
@@ -238,7 +239,7 @@ namespace LazyMagic
             var classFileContent = _template.Replace("__NameSpace__", $"{nameSpace}");
             foreach (var classBody in classDeclaration)
             {
-                classCode += HasPublicIdProperty(classBody)
+                classCode += HasPublicIdProperty(classBody) && UseIItemInterface
                     ? AddInterfaceToClass(classBody, "IItem").ToString()
                     : classBody.ToString();
             }
