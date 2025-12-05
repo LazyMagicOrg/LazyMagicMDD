@@ -1,4 +1,4 @@
-﻿using NSwag.CodeGeneration.CSharp;
+using NSwag.CodeGeneration.CSharp;
 using System.Threading.Tasks;
 using System;
 using System.IO;
@@ -16,6 +16,7 @@ using FluentValidation.Results;
 using System.Text.RegularExpressions;
 using System.Xml.Schema;
 using DotNet.Globbing;
+using Newtonsoft.Json.Linq;
 
 namespace LazyMagic
 {
@@ -60,11 +61,11 @@ namespace LazyMagic
                 var openApiSpec = directive.OpenApiSpec;
                 OpenApiDocument openApiDocument = await ParseOpenApiYamlContent(openApiSpec);
 
-                var modulePath = directive.Key.Replace('.','_').Replace('-','_'); // Replace dots and dashes with underscores for C# member name compatibility
+                var modulePath = directive.Key.Replace(".","").Replace("-",""); // Replace dots and dashes for C# member name compatibility
 
                 // Here we modify the OpenApi spec paths and operationIds to 
                 // use the Module name as a prefix. This allows modules, with 
-                // similar paths to be used in the same Lambdas.
+                // similar paths to be used in the same Container.
                 var paths = openApiDocument.Paths;
                 var pathKeys = paths.Keys.ToList();
                 foreach(var path in pathKeys)
@@ -180,6 +181,13 @@ namespace LazyMagic
                     RegexOptions.Multiline);
 
                 root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
+
+                // Transform methods with x-lz-fromform to use [FromForm] parameter
+                var fromFormOperations = GetFromFormOperations(openApiDocument);
+                if (fromFormOperations.Count > 0)
+                {
+                    TransformFromFormMethods(ref root, fromFormOperations, modulePath, openApiDocument);
+                }
 
                 // Extract and save the Interface file
                 // RemoveAsyncFromInterfaceMethodNames(ref root); // Removed to keep Async suffix for proper inheritance with client SDK
@@ -375,6 +383,15 @@ global using LazyMagic.Shared;
             
             // Parse the generated controller interface and transform it to client interface
             var root = CSharpSyntaxTree.ParseText(controllerCode).GetCompilationUnitRoot();
+
+            // Apply x-lz-fromform transformation before extracting interface
+            var fromFormOperations = GetFromFormOperations(openApiDocument);
+            if (fromFormOperations.Count > 0)
+            {
+                var modulePath = moduleName.Replace(".", "").Replace("-","");
+                TransformFromFormMethodsInInterface(ref root, fromFormOperations, modulePath);
+            }
+
             var interfaceNode = root.DescendantNodes().OfType<InterfaceDeclarationSyntax>().FirstOrDefault();
             
             if (interfaceNode == null)
@@ -388,7 +405,7 @@ global using LazyMagic.Shared;
             foreach (var method in interfaceNode.Members.OfType<MethodDeclarationSyntax>())
             {
                 // Transform the method for client interface
-                var clientMethod = TransformControllerMethodToClientMethod(method);
+                var clientMethod = TransformControllerMethodToClientMethod(method, fromFormOperations);
                 if (!string.IsNullOrEmpty(clientMethod))
                 {
                     clientMethods.Add(clientMethod);
@@ -431,7 +448,7 @@ namespace {namespaceName}
 ";
         }
         
-        private string TransformControllerMethodToClientMethod(MethodDeclarationSyntax method)
+        private string TransformControllerMethodToClientMethod(MethodDeclarationSyntax method, Dictionary<string, string> fromFormOperations = null)
         {
             if (method == null) return string.Empty;
             
@@ -476,6 +493,38 @@ namespace {namespaceName}
             // Get method name and parameters
             var methodName = method.Identifier.ToString();
             var parameters = method.ParameterList.ToString();
+
+            // Check if this method needs x-lz-fromform transformation for client interface
+            // Client interfaces don't need [FromForm] attribute, just the type parameter
+            if (fromFormOperations != null && fromFormOperations.TryGetValue(methodName, out var formTypeName))
+            {
+                // Build new parameter list: keep path/query params, replace form params with single body param
+                var pathQueryParams = new List<string>();
+                foreach (var param in method.ParameterList.Parameters)
+                {
+                    var hasRouteOrQueryAttr = param.AttributeLists
+                        .SelectMany(al => al.Attributes)
+                        .Any(a =>
+                        {
+                            var attrName = a.Name.ToString();
+                            return attrName.Contains("FromRoute") ||
+                                   attrName.Contains("FromQuery") ||
+                                   attrName.Contains("FromPath");
+                        });
+
+                    if (hasRouteOrQueryAttr)
+                    {
+                        // For client interface, strip the attribute and just keep type + name
+                        var paramType = param.Type?.ToString() ?? "object";
+                        var paramName = param.Identifier.ToString();
+                        pathQueryParams.Add($"{paramType} {paramName}");
+                    }
+                }
+                
+                // Add the form body parameter
+                pathQueryParams.Add($"{formTypeName} body");
+                parameters = $"({string.Join(", ", pathQueryParams)})";
+            }
             
             // Add ApiException documentation if not present
             var hasApiExceptionDoc = documentationLines.Any(line => line.Contains("ApiException"));
@@ -492,7 +541,7 @@ namespace {namespaceName}
             
             return $"{documentation}        {clientReturnType} {methodName}{parameters};";
         }
-        
+         
         private string TransformReturnTypeForClient(string controllerReturnType)
         {
             // Transform Task<ActionResult<T>> to Task<T>
@@ -979,6 +1028,300 @@ $@"
                     }
             return map;
         }
+
+        /// <summary>
+        /// Extracts x-lz-fromform extension data from OpenAPI operations.
+        /// Returns a dictionary mapping operationId to the form type name (from $ref).
+        /// </summary>
+        private static Dictionary<string, string> GetFromFormOperations(OpenApiDocument openApiDocument)
+        {
+            var map = new Dictionary<string, string>();
+
+            foreach (var path in openApiDocument.Paths)
+            {
+                foreach (var operation in path.Value.Values)
+                {
+                    if (operation.OperationId == null || operation.ExtensionData == null)
+                        continue;
+
+                    if (operation.ExtensionData.TryGetValue("x-lz-fromform", out var fromFormValue))
+                    {
+                        // The value is expected to be an object with $ref property
+                        // e.g., { "$ref": "#/components/schemas/CarouselWidgetForm" }
+                        string typeName = null;
+
+                        if (fromFormValue is IDictionary<string, object> fromFormDict)
+                        {
+                            if (fromFormDict.TryGetValue("$ref", out var refValue))
+                            {
+                                var refString = refValue?.ToString();
+                                if (!string.IsNullOrEmpty(refString))
+                                {
+                                    // Extract type name from $ref: "#/components/schemas/CarouselWidgetForm" -> "CarouselWidgetForm"
+                                    var lastSlash = refString.LastIndexOf('/');
+                                    typeName = lastSlash >= 0 ? refString.Substring(lastSlash + 1) : refString;
+                                }
+                            }
+                        }
+                        else if (fromFormValue is JObject jObj)
+                        {
+                            // Handle JObject (common when parsing YAML/JSON)
+                            var refToken = jObj["$ref"];
+                            if (refToken != null)
+                            {
+                                var refString = refToken.ToString();
+                                if (!string.IsNullOrEmpty(refString))
+                                {
+                                    var lastSlash = refString.LastIndexOf('/');
+                                    typeName = lastSlash >= 0 ? refString.Substring(lastSlash + 1) : refString;
+                                }
+                            }
+                        }
+                        else if (fromFormValue is string refString && refString.Contains("/"))
+                        {
+                            // Handle case where value is directly a $ref string
+                            var lastSlash = refString.LastIndexOf('/');
+                            typeName = lastSlash >= 0 ? refString.Substring(lastSlash + 1) : refString;
+                        }
+
+                        if (!string.IsNullOrEmpty(typeName))
+                        {
+                            map[operation.OperationId] = typeName;
+                        }
+                    }
+                }
+            }
+
+            return map;
+        }
+
+        /// <summary>
+        /// Extracts path parameter names from the OpenAPI document for a given operation.
+        /// </summary>
+        private static HashSet<string> GetPathParametersFromOpenApi(OpenApiDocument openApiDocument, string operationId)
+        {
+            var pathParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            
+            foreach (var path in openApiDocument.Paths)
+            {
+                foreach (var operation in path.Value.Values)
+                {
+                    if (operation.OperationId == operationId)
+                    {
+                        // Get parameters that are in path
+                        foreach (var param in operation.Parameters.Where(p => p.Kind == NSwag.OpenApiParameterKind.Path))
+                        {
+                            pathParams.Add(param.Name);
+                        }
+                        return pathParams;
+                    }
+                }
+            }
+            
+            return pathParams;
+        }
+
+        /// <summary>
+        /// Transforms methods that have x-lz-fromform to use a single [FromForm] parameter
+        /// instead of individual form field parameters.
+        /// </summary>
+        private static void TransformFromFormMethods(ref CompilationUnitSyntax root, Dictionary<string, string> fromFormOperations, string modulePath, OpenApiDocument openApiDocument = null)
+        {
+            // Build a set of method names that need transformation (with module prefix and Async suffix)
+            var methodsToTransform = new Dictionary<string, string>();
+            foreach (var kvp in fromFormOperations)
+            {
+                // The operationId in fromFormOperations already has the module prefix and Async suffix
+                // from the earlier processing in GenerateAsync
+                methodsToTransform[kvp.Key] = kvp.Value;
+            }
+
+            if (methodsToTransform.Count == 0)
+                return;
+
+            var allMethods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            
+            // Match methods by name - class methods don't have Async suffix yet, interface methods do
+            // So we need to match both with and without Async suffix
+            var matchingMethods = allMethods.Where(m => {
+                var methodName = m.Identifier.Text;
+                // Direct match
+                if (methodsToTransform.ContainsKey(methodName))
+                    return true;
+                // Try adding Async suffix for class methods
+                if (methodsToTransform.ContainsKey(methodName + "Async"))
+                    return true;
+                return false;
+            }).ToList();
+
+            // Transform ALL matching methods (both class and interface)
+            root = root.ReplaceNodes(
+                matchingMethods,
+                (originalMethod, updatedMethod) =>
+                {
+                    var methodName = originalMethod.Identifier.Text;
+                    
+                    // Get form type name - try direct match first, then with Async suffix
+                    string formTypeName;
+                    string operationIdForOpenApi;
+                    if (methodsToTransform.TryGetValue(methodName, out formTypeName))
+                    {
+                        operationIdForOpenApi = methodName;
+                    }
+                    else if (methodsToTransform.TryGetValue(methodName + "Async", out formTypeName))
+                    {
+                        operationIdForOpenApi = methodName + "Async";
+                    }
+                    else
+                    {
+                        return originalMethod;
+                    }
+
+                    // Check if this is a class method (has attributes) or interface method (no attributes)
+                    var isClassMethod = originalMethod.AttributeLists.Count > 0;
+
+                    // Get path parameters from OpenAPI document
+                    var pathParamNames = openApiDocument != null 
+                        ? GetPathParametersFromOpenApi(openApiDocument, operationIdForOpenApi)
+                        : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    // Separate parameters into path parameters and form parameters
+                    // Track which path params we've already added to avoid duplicates
+                    // (form data might have fields with same name as path params)
+                    var parameters = originalMethod.ParameterList.Parameters;
+                    var pathParams = new List<ParameterSyntax>();
+                    var addedPathParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var hasFormParams = false;
+
+                    foreach (var param in parameters)
+                    {
+                        var paramName = param.Identifier.Text;
+                        
+                        // Check if this parameter name matches a path parameter AND we haven't added it yet
+                        if (pathParamNames.Contains(paramName) && !addedPathParams.Contains(paramName))
+                        {
+                            pathParams.Add(param);
+                            addedPathParams.Add(paramName);
+                        }
+                        else
+                        {
+                            // This is a form parameter (or duplicate path param) - we'll replace with single body param
+                            hasFormParams = true;
+                        }
+                    }
+
+                    if (!hasFormParams)
+                    {
+                        return originalMethod;
+                    }
+
+                    // Create the new parameter - with [FromForm] for class methods, without for interface methods
+                    ParameterSyntax formParameter;
+                    var typeWithSpace = SyntaxFactory.ParseTypeName(formTypeName)
+                        .WithTrailingTrivia(SyntaxFactory.Space);
+                    
+                    if (isClassMethod)
+                    {
+                        var fromFormAttribute = SyntaxFactory.Attribute(
+                            SyntaxFactory.IdentifierName("FromForm"));
+                        var attributeList = SyntaxFactory.AttributeList(
+                            SyntaxFactory.SingletonSeparatedList(fromFormAttribute));
+
+                        formParameter = SyntaxFactory.Parameter(SyntaxFactory.Identifier("body"))
+                            .WithType(typeWithSpace)
+                            .WithAttributeLists(SyntaxFactory.SingletonList(attributeList));
+                    }
+                    else
+                    {
+                        // Interface methods don't have attributes
+                        formParameter = SyntaxFactory.Parameter(SyntaxFactory.Identifier("body"))
+                            .WithType(typeWithSpace);
+                    }
+
+                    // Build the new parameter list: path params first, then body
+                    var newParams = new List<ParameterSyntax>(pathParams);
+                    newParams.Add(formParameter);
+
+                    var newParameterList = SyntaxFactory.ParameterList(
+                        SyntaxFactory.SeparatedList(newParams));
+
+                    return updatedMethod.WithParameterList(newParameterList);
+                });
+        }
+
+        /// <summary>
+        /// Transforms methods in interfaces that have x-lz-fromform to use a single parameter
+        /// instead of individual form field parameters. Used for client interface generation.
+        /// </summary>
+        private static void TransformFromFormMethodsInInterface(ref CompilationUnitSyntax root, Dictionary<string, string> fromFormOperations, string modulePath)
+        {
+            // Build a set of method names that need transformation
+            var methodsToTransform = new Dictionary<string, string>();
+            foreach (var kvp in fromFormOperations)
+            {
+                methodsToTransform[kvp.Key] = kvp.Value;
+            }
+
+            if (methodsToTransform.Count == 0)
+                return;
+
+            root = root.ReplaceNodes(
+                root.DescendantNodes()
+                    .OfType<InterfaceDeclarationSyntax>()
+                    .SelectMany(i => i.DescendantNodes().OfType<MethodDeclarationSyntax>())
+                    .Where(m => methodsToTransform.ContainsKey(m.Identifier.Text)),
+                (originalMethod, updatedMethod) =>
+                {
+                    var methodName = originalMethod.Identifier.Text;
+                    var formTypeName = methodsToTransform[methodName];
+
+                    // Separate parameters into path/query parameters and form parameters
+                    var parameters = originalMethod.ParameterList.Parameters;
+                    var pathQueryParams = new List<ParameterSyntax>();
+                    var hasFormParams = false;
+
+                    foreach (var param in parameters)
+                    {
+                        // Check if parameter has [FromRoute], [FromQuery], or [FromPath] attribute
+                        var hasRouteOrQueryAttr = param.AttributeLists
+                            .SelectMany(al => al.Attributes)
+                            .Any(a =>
+                            {
+                                var attrName = a.Name.ToString();
+                                return attrName.Contains("FromRoute") ||
+                                       attrName.Contains("FromQuery") ||
+                                       attrName.Contains("FromPath");
+                            });
+
+                        if (hasRouteOrQueryAttr)
+                        {
+                            pathQueryParams.Add(param);
+                        }
+                        else
+                        {
+                            // This is likely a form parameter - we'll replace all of them
+                            hasFormParams = true;
+                        }
+                    }
+
+                    if (!hasFormParams)
+                        return originalMethod;
+
+                    // Create the form body parameter (no [FromForm] attribute for interfaces)
+                    var formParameter = SyntaxFactory.Parameter(SyntaxFactory.Identifier("body"))
+                        .WithType(SyntaxFactory.ParseTypeName(formTypeName));
+
+                    // Build the new parameter list: path/query params first, then body
+                    var newParams = new List<ParameterSyntax>(pathQueryParams);
+                    newParams.Add(formParameter);
+
+                    var newParameterList = SyntaxFactory.ParameterList(
+                        SyntaxFactory.SeparatedList(newParams));
+
+                    return updatedMethod.WithParameterList(newParameterList);
+                });
+        }
+
         private static void UpdateControllerMethodBodies(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, string projectName)
         {
             var methodExtensions = MethodExtensionsData(openApiDocument); // Dictionary<operationId, Dictionary<extensionKey, extensionValue>>   
@@ -998,8 +1341,17 @@ $@"
                             {
                                 if (extensions.ContainsKey("x-lz-gencall"))
                                 {
-                                    body = $"{indent}var callerInfo = await {projectName}Authorization.GetCallerInfoAsync(this.Request);";
-                                    body += $"\r\n{indent}return await {extensions["x-lz-gencall"]};";
+                                    var gencallValue = extensions["x-lz-gencall"];
+                                    // If the gencall starts with "throw", don't wrap with "return await"
+                                    if (gencallValue.TrimStart().StartsWith("throw", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        body = $"{indent}{gencallValue}";
+                                    }
+                                    else
+                                    {
+                                        body = $"{indent}var callerInfo = await {projectName}Authorization.GetCallerInfoAsync(this.Request);";
+                                        body += $"\r\n{indent}return await {gencallValue};";
+                                    }
                                 }
                             }
 
