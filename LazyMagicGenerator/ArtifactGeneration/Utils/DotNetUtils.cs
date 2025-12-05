@@ -1,4 +1,4 @@
-﻿using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis;
 using System;
@@ -324,11 +324,18 @@ namespace LazyMagic
         public static void GenerateGlobalUsingFile(List<string> usings, string content, string filePath)
         {
             var usingsCode = content;
+            
+            // Ensure content ends with newline before appending usings
+            if (!string.IsNullOrEmpty(usingsCode) && !usingsCode.EndsWith("\n"))
+            {
+                usingsCode += "\r\n";
+            }
+            
             usings = usings.Distinct().ToList();    
             foreach (var usingName in usings)
                 usingsCode += $"global using {usingName};\r\n";
             File.WriteAllText(filePath, usingsCode);
-        }   
+        }
         public static void GenerateLicenseFile(string licenseText, string filePath)
         {
             if (File.Exists(filePath)) return;

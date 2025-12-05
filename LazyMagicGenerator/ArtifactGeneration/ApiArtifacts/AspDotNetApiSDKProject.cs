@@ -148,7 +148,10 @@ namespace LazyMagic
                 var nswagGenerator = new CSharpClientGenerator(openApiDocument, nswagSettings);
                 var code = nswagGenerator.GenerateFile();
 
-                GenerateClientSDKClass(code, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, projectName + ".g.cs"), moduleNames.ToList());
+                // Extract x-lz-fromform operations for transformation
+                var fromFormOperations = GetFromFormOperations(openApiDocument);
+
+                GenerateClientSDKClass(code, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, projectName + ".g.cs"), moduleNames.ToList(), fromFormOperations, openApiDocument);
 
                 // Exports
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName + ".csproj");
@@ -157,17 +160,41 @@ namespace LazyMagic
                 throw new Exception($"Error generating {GetType().Name} {ex.Message}");
             }
         }
-        private void GenerateClientSDKClass(string code, string projectName, string filePath, List<string> moduleNames)
+        private void GenerateClientSDKClass(string code, string projectName, string filePath, List<string> moduleNames, Dictionary<string, string> fromFormOperations, OpenApiDocument openApiDocument)
         {
             // Generate the client SDK
             var root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
-            root = RemoveGeneratedSchemaClasses(root, new List<string> { "ApiException", projectName }); // preserve ApiException and client class
+            // Preserve ApiException and the main client class
+            // FileParameter is now defined in the client interface project
+            root = RemoveGeneratedSchemaClasses(root, new List<string> { "ApiException", projectName });
 
             // Remove the NSWAG-generated interface (we'll create our own)
             RemoveInterface(ref root);
+            
+            // Transform methods with x-lz-fromform to use single body parameter
+            if (fromFormOperations != null && fromFormOperations.Count > 0)
+            {
+                TransformFromFormMethods(ref root, fromFormOperations, openApiDocument);
+            }
+
+            // Get the code as string
+            var outputCode = root.ToFullString();
+            
+            // Add using statements for module namespaces at the top of the file
+            // This is needed for FileParameter and other types defined in module client interfaces
+            if (moduleNames != null && moduleNames.Any())
+            {
+                var moduleUsings = string.Join("\r\n", moduleNames.Select(m => $"using {m};"));
+                // Insert after the first line (which is the auto-generated comment)
+                var firstNewline = outputCode.IndexOf('\n');
+                if (firstNewline > 0)
+                {
+                    outputCode = outputCode.Insert(firstNewline + 1, moduleUsings + "\r\n");
+                }
+            }
 
             // Write the client class file (without the interface)
-            File.WriteAllText(filePath, root.ToFullString());
+            File.WriteAllText(filePath, outputCode);
 
             var directory = Path.GetDirectoryName(filePath);
 
@@ -245,7 +272,389 @@ namespace {projectName}
                 }
             }
             return projects;
+        }
 
+        /// <summary>
+        /// Extracts x-lz-fromform extension data from OpenAPI operations.
+        /// Returns a dictionary mapping operationId to the form type name (from $ref).
+        /// </summary>
+        private static Dictionary<string, string> GetFromFormOperations(OpenApiDocument openApiDocument)
+        {
+            var map = new Dictionary<string, string>();
+
+            foreach (var path in openApiDocument.Paths)
+            {
+                foreach (var operation in path.Value.Values)
+                {
+                    if (operation.OperationId == null || operation.ExtensionData == null)
+                        continue;
+
+                    if (operation.ExtensionData.TryGetValue("x-lz-fromform", out var fromFormValue))
+                    {
+                        // The value is expected to be an object with $ref property
+                        // e.g., { "$ref": "#/components/schemas/CarouselWidgetForm" }
+                        string typeName = null;
+
+                        if (fromFormValue is IDictionary<string, object> fromFormDict)
+                        {
+                            if (fromFormDict.TryGetValue("$ref", out var refValue))
+                            {
+                                var refString = refValue?.ToString();
+                                if (!string.IsNullOrEmpty(refString))
+                                {
+                                    // Extract type name from $ref: "#/components/schemas/CarouselWidgetForm" -> "CarouselWidgetForm"
+                                    var lastSlash = refString.LastIndexOf('/');
+                                    typeName = lastSlash >= 0 ? refString.Substring(lastSlash + 1) : refString;
+                                }
+                            }
+                        }
+                        else if (fromFormValue is Newtonsoft.Json.Linq.JObject jObj)
+                        {
+                            // Handle JObject (common when parsing YAML/JSON)
+                            var refToken = jObj["$ref"];
+                            if (refToken != null)
+                            {
+                                var refString = refToken.ToString();
+                                if (!string.IsNullOrEmpty(refString))
+                                {
+                                    var lastSlash = refString.LastIndexOf('/');
+                                    typeName = lastSlash >= 0 ? refString.Substring(lastSlash + 1) : refString;
+                                }
+                            }
+                        }
+                        else if (fromFormValue is string refString && refString.Contains("/"))
+                        {
+                            // Handle case where value is directly a $ref string
+                            var lastSlash = refString.LastIndexOf('/');
+                            typeName = lastSlash >= 0 ? refString.Substring(lastSlash + 1) : refString;
+                        }
+
+                        if (!string.IsNullOrEmpty(typeName))
+                        {
+                            map[operation.OperationId] = typeName;
+                        }
+                    }
+                }
+            }
+
+            return map;
+        }
+
+        /// <summary>
+        /// Extracts path parameter names from the OpenAPI document for a given operation.
+        /// </summary>
+        private static HashSet<string> GetPathParametersFromOpenApi(OpenApiDocument openApiDocument, string operationId)
+        {
+            var pathParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            
+            foreach (var path in openApiDocument.Paths)
+            {
+                foreach (var operation in path.Value.Values)
+                {
+                    if (operation.OperationId == operationId)
+                    {
+                        // Get parameters that are in path
+                        foreach (var param in operation.Parameters.Where(p => p.Kind == NSwag.OpenApiParameterKind.Path))
+                        {
+                            pathParams.Add(param.Name);
+                        }
+                        return pathParams;
+                    }
+                }
+            }
+            
+            return pathParams;
+        }
+
+        /// <summary>
+        /// Transforms methods that have x-lz-fromform to create wrapper methods with simplified signatures.
+        /// 
+        /// NSwag generates methods with individual form field parameters. We need to:
+        /// 1. Keep NSwag's original implementation method (with CancellationToken) but rename it to private with __Impl suffix
+        /// 2. Remove NSwag's wrapper method (without CancellationToken) 
+        /// 3. Generate new public wrapper methods that take a single body parameter and extract properties to call the impl
+        /// </summary>
+        private static void TransformFromFormMethods(ref CompilationUnitSyntax root, Dictionary<string, string> fromFormOperations, OpenApiDocument openApiDocument)
+        {
+            if (fromFormOperations.Count == 0)
+                return;
+
+            var allMethods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            
+            // Find implementation methods (with CancellationToken) that need transformation
+            var implMethods = allMethods.Where(m => {
+                var methodName = m.Identifier.Text;
+                var hasCancellationToken = m.ParameterList.Parameters
+                    .Any(p => p.Type?.ToString().Contains("CancellationToken") == true);
+                
+                if (!hasCancellationToken)
+                    return false;
+                    
+                // Check if this method matches a fromform operation
+                if (fromFormOperations.ContainsKey(methodName))
+                    return true;
+                if (methodName.EndsWith("Async") && fromFormOperations.ContainsKey(methodName.Substring(0, methodName.Length - 5)))
+                    return true;
+                return false;
+            }).ToList();
+
+            // Find wrapper methods to remove (same name but without CancellationToken)
+            var methodsToRemove = allMethods.Where(m => {
+                var methodName = m.Identifier.Text;
+                var hasCancellationToken = m.ParameterList.Parameters
+                    .Any(p => p.Type?.ToString().Contains("CancellationToken") == true);
+                
+                if (hasCancellationToken)
+                    return false;
+                    
+                // Check if this method matches a fromform operation
+                if (fromFormOperations.ContainsKey(methodName))
+                    return true;
+                if (methodName.EndsWith("Async") && fromFormOperations.ContainsKey(methodName.Substring(0, methodName.Length - 5)))
+                    return true;
+                return false;
+            }).ToList();
+
+            // Collect info for generating new wrapper methods BEFORE we modify anything
+            var wrapperMethodsToGenerate = new List<(string methodName, string formTypeName, List<(string name, string type)> pathParams, List<(string name, string type)> formParams)>();
+            
+            foreach (var implMethod in implMethods)
+            {
+                var methodName = implMethod.Identifier.Text;
+                
+                // Get form type name
+                string formTypeName;
+                string operationIdForOpenApi;
+                if (fromFormOperations.TryGetValue(methodName, out formTypeName))
+                {
+                    operationIdForOpenApi = methodName;
+                }
+                else if (methodName.EndsWith("Async") && fromFormOperations.TryGetValue(methodName.Substring(0, methodName.Length - 5), out formTypeName))
+                {
+                    operationIdForOpenApi = methodName.Substring(0, methodName.Length - 5);
+                }
+                else
+                {
+                    continue;
+                }
+
+                // Get path parameters from OpenAPI document
+                var pathParamNames = openApiDocument != null 
+                    ? GetPathParametersFromOpenApi(openApiDocument, operationIdForOpenApi)
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                // Categorize parameters
+                var parameters = implMethod.ParameterList.Parameters;
+                var pathParamsList = new List<(string name, string type)>();
+                var formParamsList = new List<(string name, string type)>();
+                var addedPathParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var param in parameters)
+                {
+                    var paramName = param.Identifier.Text;
+                    var paramType = param.Type?.ToString() ?? "";
+                    
+                    if (paramType.Contains("CancellationToken"))
+                    {
+                        // Skip CancellationToken - handled separately
+                        continue;
+                    }
+                    else if (pathParamNames.Contains(paramName))
+                    {
+                        // This is a path parameter - add only once to path params
+                        if (!addedPathParams.Contains(paramName))
+                        {
+                            pathParamsList.Add((paramName, paramType));
+                            addedPathParams.Add(paramName);
+                        }
+                        // Skip duplicate path params (form field with same name as path param)
+                    }
+                    else
+                    {
+                        // This is a form parameter (not a path param duplicate)
+                        formParamsList.Add((paramName, paramType));
+                    }
+                }
+
+                if (formParamsList.Count > 0)
+                {
+                    wrapperMethodsToGenerate.Add((methodName, formTypeName, pathParamsList, formParamsList));
+                }
+            }
+
+            // First, remove the NSwag wrapper methods (without CancellationToken)
+            if (methodsToRemove.Any())
+            {
+                root = root.RemoveNodes(methodsToRemove, SyntaxRemoveOptions.KeepNoTrivia);
+            }
+
+            // Rename implementation methods to private with __Impl suffix and deduplicate parameters
+            // Re-fetch methods after removal
+            allMethods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            var implMethodsToRename = allMethods.Where(m => {
+                var methodName = m.Identifier.Text;
+                var hasCancellationToken = m.ParameterList.Parameters
+                    .Any(p => p.Type?.ToString().Contains("CancellationToken") == true);
+                
+                if (!hasCancellationToken)
+                    return false;
+                    
+                if (fromFormOperations.ContainsKey(methodName))
+                    return true;
+                if (methodName.EndsWith("Async") && fromFormOperations.ContainsKey(methodName.Substring(0, methodName.Length - 5)))
+                    return true;
+                return false;
+            }).ToList();
+
+            // Rename impl methods to __Impl, make them private, and deduplicate parameters
+            root = root.ReplaceNodes(
+                implMethodsToRename,
+                (originalMethod, updatedMethod) =>
+                {
+                    var methodName = originalMethod.Identifier.Text;
+                    var newName = methodName + "__Impl";
+                    
+                    // Change modifiers: remove public/virtual, add private
+                    var newModifiers = new List<SyntaxToken>();
+                    foreach (var modifier in originalMethod.Modifiers)
+                    {
+                        if (modifier.IsKind(SyntaxKind.PublicKeyword) || 
+                            modifier.IsKind(SyntaxKind.VirtualKeyword))
+                        {
+                            continue; // Skip public and virtual
+                        }
+                        newModifiers.Add(modifier);
+                    }
+                    // Add private at the beginning
+                    newModifiers.Insert(0, SyntaxFactory.Token(SyntaxKind.PrivateKeyword).WithTrailingTrivia(SyntaxFactory.Space));
+                    
+                    // Deduplicate parameters (NSwag may generate duplicate param names for path + form field with same name)
+                    var seenParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var deduplicatedParams = new List<ParameterSyntax>();
+                    foreach (var param in originalMethod.ParameterList.Parameters)
+                    {
+                        var paramName = param.Identifier.Text;
+                        if (!seenParams.Contains(paramName))
+                        {
+                            deduplicatedParams.Add(param);
+                            seenParams.Add(paramName);
+                        }
+                        // Skip duplicate parameters with same name
+                    }
+                    var newParameterList = SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(deduplicatedParams));
+                    
+                    return updatedMethod
+                        .WithIdentifier(SyntaxFactory.Identifier(newName))
+                        .WithModifiers(SyntaxFactory.TokenList(newModifiers))
+                        .WithParameterList(newParameterList);
+                });
+
+            // Generate new public wrapper methods
+            if (wrapperMethodsToGenerate.Any())
+            {
+                var classDecl = root.DescendantNodes().OfType<ClassDeclarationSyntax>().FirstOrDefault();
+                if (classDecl != null)
+                {
+                    var newMembers = new List<MemberDeclarationSyntax>();
+                    foreach (var (methodName, formTypeName, pathParams, formParams) in wrapperMethodsToGenerate)
+                    {
+                        // Generate the CancellationToken version (calls __Impl)
+                        var implWrapper = GenerateImplWrapperMethod(methodName, formTypeName, pathParams, formParams);
+                        if (implWrapper != null)
+                        {
+                            newMembers.Add(implWrapper);
+                        }
+                        
+                        // Generate the simple version (calls CancellationToken version with None)
+                        var simpleWrapper = GenerateSimpleWrapperMethod(methodName, formTypeName, pathParams);
+                        if (simpleWrapper != null)
+                        {
+                            newMembers.Add(simpleWrapper);
+                        }
+                    }
+
+                    if (newMembers.Any())
+                    {
+                        var newClassDecl = classDecl.AddMembers(newMembers.ToArray());
+                        root = root.ReplaceNode(classDecl, newClassDecl);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Generates a public wrapper method with CancellationToken that extracts properties from body and calls __Impl
+        /// </summary>
+        private static MethodDeclarationSyntax GenerateImplWrapperMethod(string methodName, string formTypeName, List<(string name, string type)> pathParams, List<(string name, string type)> formParams)
+        {
+            // Build parameter list: path params + body + CancellationToken
+            var paramList = new List<string>();
+            var argList = new List<string>();
+            
+            foreach (var (name, type) in pathParams)
+            {
+                paramList.Add($"{type} {name}");
+                argList.Add(name);
+            }
+            
+            paramList.Add($"{formTypeName} body");
+            paramList.Add("System.Threading.CancellationToken cancellationToken");
+            
+            // Add form params extracted from body - use PascalCase property names
+            foreach (var (name, type) in formParams)
+            {
+                var propertyName = char.ToUpper(name[0]) + name.Substring(1); // Convert to PascalCase
+                argList.Add($"body.{propertyName}");
+            }
+            argList.Add("cancellationToken");
+
+            var paramsStr = string.Join(", ", paramList);
+            var argsStr = string.Join(", ", argList);
+
+            var code = $@"
+        /// <returns>Success</returns>
+        /// <exception cref=""ApiException"">A server side error occurred.</exception>
+        public virtual System.Threading.Tasks.Task {methodName}({paramsStr})
+        {{
+            return {methodName}__Impl({argsStr});
+        }}";
+
+            var methodSyntax = SyntaxFactory.ParseMemberDeclaration(code) as MethodDeclarationSyntax;
+            return methodSyntax;
+        }
+
+        /// <summary>
+        /// Generates a simple wrapper method (without CancellationToken) that calls the CancellationToken version with None
+        /// </summary>
+        private static MethodDeclarationSyntax GenerateSimpleWrapperMethod(string methodName, string formTypeName, List<(string name, string type)> pathParams)
+        {
+            // Build parameter list: path params + body (no CancellationToken)
+            var paramList = new List<string>();
+            var argList = new List<string>();
+            
+            foreach (var (name, type) in pathParams)
+            {
+                paramList.Add($"{type} {name}");
+                argList.Add(name);
+            }
+            
+            paramList.Add($"{formTypeName} body");
+            argList.Add("body");
+            argList.Add("System.Threading.CancellationToken.None");
+
+            var paramsStr = string.Join(", ", paramList);
+            var argsStr = string.Join(", ", argList);
+
+            var code = $@"
+        /// <returns>Success</returns>
+        /// <exception cref=""ApiException"">A server side error occurred.</exception>
+        public virtual System.Threading.Tasks.Task {methodName}({paramsStr})
+        {{
+            return {methodName}({argsStr});
+        }}";
+
+            var methodSyntax = SyntaxFactory.ParseMemberDeclaration(code) as MethodDeclarationSyntax;
+            return methodSyntax;
         }
 
     }

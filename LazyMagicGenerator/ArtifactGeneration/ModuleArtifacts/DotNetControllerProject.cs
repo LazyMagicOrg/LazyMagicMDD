@@ -35,6 +35,9 @@ namespace LazyMagic
         public string ExportedClientInterface { get; set; } = "";
         public string ExportedClientInterfaceName { get; set; } = "";
         public string ExportedClientInterfaceProjectPath { get; set; } = "";
+        public string OperationType { get; set; } = "default";
+        public string FlowThroughDomain { get; set; } = "";
+        public string FlowThroughPort { get; set; } = "";
 
         public string ControllerLifetime { get; set; } = "Singleton";
         public bool GenerateClientInterface { get; set; } = true;
@@ -108,8 +111,13 @@ namespace LazyMagic
                 var openApiSpecs = directive.OpenApiSpecs ?? new List<string>();
                 var schemas = directive.Schemas;
 
-                //  Get controller dependencies
+                //  Get controller dependencies from repo and schema projects
                 var interfaces = new List<string>() { $"I{projectName}Authorization" };
+                
+                // Track which schemas have repo projects
+                var schemasWithRepos = new HashSet<string>();
+                
+                // First, get dependencies from DotNetRepoProject artifacts
                 var dependantRepoArtifacts = solution.Directives.GetArtifactsByType<DotNetRepoProject>(schemas);
                 foreach (var dotNetRepoArtifact in dependantRepoArtifacts)
                 {
@@ -120,11 +128,45 @@ namespace LazyMagic
                     GlobalUsings.AddRange(dotNetRepoProject.ExportedGlobalUsings);
                     interfaces.AddRange(dotNetRepoProject.ExportedInterfaces);
                 }
+                
+                // Find which schemas have repo projects by checking each schema directive
+                foreach (var schemaKey in schemas)
+                {
+                    if (solution.Directives.TryGetValue(schemaKey, out var schemaDirective) && schemaDirective is Schema schema)
+                    {
+                        if (schema.Artifacts.Values.Any(a => a is DotNetRepoProject))
+                        {
+                            schemasWithRepos.Add(schemaKey);
+                        }
+                    }
+                }
+                
+                // Get dependencies from DotNetSchemaProject artifacts for schemas without repo projects
+                var schemasWithoutRepos = schemas.Where(s => !schemasWithRepos.Contains(s)).ToList();
+                var schemaOnlyArtifacts = solution.Directives.GetArtifactsByType<DotNetSchemaProject>(schemasWithoutRepos);
+                foreach (var dotNetSchemaArtifact in schemaOnlyArtifacts)
+                {
+                    var dotNetSchemaProject = dotNetSchemaArtifact as DotNetSchemaProject;
+                    ProjectReferences.Add(dotNetSchemaProject.ExportedProjectPath);
+                    PackageReferences.AddRange(dotNetSchemaProject.ExportedPackages);
+                    GlobalUsings.AddRange(dotNetSchemaProject.ExportedGlobalUsings);
+                }
+                
                 ProjectReferences = ProjectReferences.Distinct().ToList();  
                 PackageReferences = PackageReferences.Distinct().ToList();
                 ServiceRegistrations = ServiceRegistrations.Distinct().ToList();
                 GlobalUsings = GlobalUsings.Distinct().ToList();
                 interfaces = interfaces.Distinct().ToList();
+
+                // Add Polly global usings for flowthrough operations
+                if (OperationType == "flowthrough")
+                {
+                    GlobalUsings.Add("Polly");
+                    GlobalUsings.Add("Polly.Extensions.Http");
+                    GlobalUsings.Add("Microsoft.Extensions.Http");
+                    GlobalUsings.Add("System.Net.Http.Json");
+                    PackageReferences.Add("Microsoft.Extensions.Http.Polly");
+                }
 
                 // Copy the template project to the target project. Removes *.g.* files.
                 var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
@@ -219,11 +261,11 @@ namespace LazyMagic
 
                 root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
 
-                GenerateBaseClass(ref root, openApiDocument, interfaces, Dependencies, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}ControllerBase") + ".g.cs");
+                GenerateBaseClass(ref root, openApiDocument, interfaces, Dependencies, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}ControllerBase") + ".g.cs", OperationType);
 
                 GenerateAuthorizationClass(ref root, openApiDocument, projectName, nameSpace, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Authorization") + ".g.cs");
 
-                GenerateServiceRegistrationsClass(projectName, nameSpace, ServiceRegistrations, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Registrations") + ".g.cs", ControllerLifetime); // This class contains the extension methods to register necesssry services
+                GenerateServiceRegistrationsClass(projectName, nameSpace, ServiceRegistrations, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Registrations") + ".g.cs", ControllerLifetime, OperationType); // This class contains the extension methods to register necesssry services
 
                 // Write the partial class
                 var classCode =
@@ -232,7 +274,7 @@ namespace {projectName};
 public partial class {projectName}Controller : {projectName}ControllerBase {{}}
 ";
                 root = CSharpSyntaxTree.ParseText(classCode).GetCompilationUnitRoot();
-                InsertConstructor(ref root, projectName + "Controller", interfaces, Dependencies);
+                InsertConstructor(ref root, projectName + "Controller", interfaces, Dependencies, OperationType);
                 classCode = root.ToFullString();
                 File.WriteAllText(Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Controller") + ".g.cs", classCode);
 
@@ -244,7 +286,10 @@ public partial class {projectName}Controller : {projectName}ControllerBase {{}}
 
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName) + ".csproj";
                 ExportedServiceRegistrations = new List<string> { $"Add{projectName}" };
-                ExportedGlobalUsings = GlobalUsings.Distinct().ToList();
+                
+                // Export global usings, but exclude flowthrough-specific ones (they're module-internal)
+                var flowthroughUsings = new HashSet<string> { "Polly", "Polly.Extensions.Http", "Microsoft.Extensions.Http", "System.Net.Http.Json" };
+                ExportedGlobalUsings = GlobalUsings.Where(u => !flowthroughUsings.Contains(u)).Distinct().ToList();
                 ExportedGlobalUsings.Add(nameSpace);
                 ExportedOpenApiSpecs = openApiSpecs;
                 ExportedOpenApiSpec = exportedOpenApiSpec;
@@ -355,8 +400,43 @@ global using LazyMagic.Shared;
             var interfaceFilePath = Path.Combine(targetProjectDir, $"I{directive.Key}Client.g.cs");
             File.WriteAllText(interfaceFilePath, interfaceCode);
 
+            // Generate FileParameter class (needed for file upload operations)
+            var fileParameterCode = GenerateFileParameterClass(nameSpace);
+            var fileParameterFilePath = Path.Combine(targetProjectDir, "FileParameter.g.cs");
+            File.WriteAllText(fileParameterFilePath, fileParameterCode);
+
             // Set export
             ExportedClientInterfaceProjectPath = Path.Combine(clientOutputFolder, clientProjectName, clientProjectName + ".csproj");
+        }
+
+        private string GenerateFileParameterClass(string namespaceName)
+        {
+            return $@"//----------------------
+// <auto-generated>
+//     Generated by LazyMagic, do not edit directly. Changes will be overwritten.
+// </auto-generated>
+//----------------------
+
+namespace {namespaceName}
+{{
+    /// <summary>
+    /// Represents a file parameter for multipart form data uploads.
+    /// </summary>
+    public class FileParameter
+    {{
+        public FileParameter(System.IO.Stream data, string fileName = null, string contentType = null)
+        {{
+            Data = data;
+            FileName = fileName;
+            ContentType = contentType;
+        }}
+
+        public System.IO.Stream Data {{ get; }}
+        public string FileName {{ get; }}
+        public string ContentType {{ get; }}
+    }}
+}}
+";
         }
 
         private async Task<string> GenerateModuleClientInterface(string moduleName, string namespaceName, OpenApiDocument openApiDocument)
@@ -389,7 +469,7 @@ global using LazyMagic.Shared;
             if (fromFormOperations.Count > 0)
             {
                 var modulePath = moduleName.Replace(".", "").Replace("-","");
-                TransformFromFormMethodsInInterface(ref root, fromFormOperations, modulePath);
+                TransformFromFormMethodsInInterface(ref root, fromFormOperations, modulePath, openApiDocument);
             }
 
             var interfaceNode = root.DescendantNodes().OfType<InterfaceDeclarationSyntax>().FirstOrDefault();
@@ -405,7 +485,7 @@ global using LazyMagic.Shared;
             foreach (var method in interfaceNode.Members.OfType<MethodDeclarationSyntax>())
             {
                 // Transform the method for client interface
-                var clientMethod = TransformControllerMethodToClientMethod(method, fromFormOperations);
+                var clientMethod = TransformControllerMethodToClientMethod(method, fromFormOperations, openApiDocument);
                 if (!string.IsNullOrEmpty(clientMethod))
                 {
                     clientMethods.Add(clientMethod);
@@ -448,7 +528,7 @@ namespace {namespaceName}
 ";
         }
         
-        private string TransformControllerMethodToClientMethod(MethodDeclarationSyntax method, Dictionary<string, string> fromFormOperations = null)
+        private string TransformControllerMethodToClientMethod(MethodDeclarationSyntax method, Dictionary<string, string> fromFormOperations = null, OpenApiDocument openApiDocument = null)
         {
             if (method == null) return string.Empty;
             
@@ -493,31 +573,32 @@ namespace {namespaceName}
             // Get method name and parameters
             var methodName = method.Identifier.ToString();
             var parameters = method.ParameterList.ToString();
+            
+            // Keep FileParameter type - it's generated in the client interface project
 
             // Check if this method needs x-lz-fromform transformation for client interface
             // Client interfaces don't need [FromForm] attribute, just the type parameter
             if (fromFormOperations != null && fromFormOperations.TryGetValue(methodName, out var formTypeName))
             {
-                // Build new parameter list: keep path/query params, replace form params with single body param
+                // Get path parameters from OpenAPI document
+                var pathParamNames = openApiDocument != null 
+                    ? GetPathParametersFromOpenApi(openApiDocument, methodName)
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                
+                // Build new parameter list: keep path params, replace form params with single body param
                 var pathQueryParams = new List<string>();
+                var addedPathParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                
                 foreach (var param in method.ParameterList.Parameters)
                 {
-                    var hasRouteOrQueryAttr = param.AttributeLists
-                        .SelectMany(al => al.Attributes)
-                        .Any(a =>
-                        {
-                            var attrName = a.Name.ToString();
-                            return attrName.Contains("FromRoute") ||
-                                   attrName.Contains("FromQuery") ||
-                                   attrName.Contains("FromPath");
-                        });
-
-                    if (hasRouteOrQueryAttr)
+                    var paramName = param.Identifier.ToString();
+                    var paramType = param.Type?.ToString() ?? "object";
+                    
+                    // Keep path parameters (avoid duplicates from form data)
+                    if (pathParamNames.Contains(paramName) && !addedPathParams.Contains(paramName))
                     {
-                        // For client interface, strip the attribute and just keep type + name
-                        var paramType = param.Type?.ToString() ?? "object";
-                        var paramName = param.Identifier.ToString();
                         pathQueryParams.Add($"{paramType} {paramName}");
+                        addedPathParams.Add(paramName);
                     }
                 }
                 
@@ -774,7 +855,7 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
 ";
             File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
         }
-        private static void GenerateBaseClass(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, List<string> interfaces, List<string> dependencies, string projectName, string filePath)
+        private static void GenerateBaseClass(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, List<string> interfaces, List<string> dependencies, string projectName, string filePath, string operationType)
         {
             InsertPragma(ref root, "1998", "Disable async warning."); // Disable async warning
 
@@ -784,11 +865,20 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
 
             InsertRepoVars(ref root, interfaces);
 
+            // Add IHttpClientFactory property for flowthrough operations
+            if (operationType == "flowthrough")
+            {
+                InsertMemberIntoClass(ref root, "\r\n\t\tpublic IHttpClientFactory HttpClientFactory { get; set; }");
+                // Generate the flowthrough helpers in a separate file to avoid NSwag processing issues
+                var flowthroughFilePath = filePath.Replace("ControllerBase.g.cs", "FlowThroughHelpers.g.cs");
+                GenerateFlowThroughHelpersFile(projectName, flowthroughFilePath);
+            }
+
             EnsureMethodsHaveAsyncSuffix(ref root); // Ensure all methods have Async suffix to match interface
 
             MarkMethodsVirtualAsync(ref root); // Make all methods virtual async 
 
-            UpdateControllerMethodBodies(ref root, openApiDocument, projectName); // Use x-lz-gencall attributes to generate method bodies   
+            UpdateControllerMethodBodies(ref root, openApiDocument, projectName, operationType); // Use x-lz-gencall attributes to generate method bodies   
 
             InsertMethodIntoClass(ref root, "\r\n\t\tprotected virtual void Init() { }"); // Add Init method
 
@@ -797,6 +887,268 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
             FixNswagSyntax(code); // NSwag seems to have a _template bug. Microsoft.AspNetCore.Mvc.HttpGET should be Microsoft.AspNetCore.Mvc.HttpGet
 
             File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
+        }
+
+        /// <summary>
+        /// Generates a separate file containing flow-through helper methods as a partial class.
+        /// This avoids issues with NSwag processing (async suffix addition, method body replacement).
+        /// </summary>
+        private static void GenerateFlowThroughHelpersFile(string projectName, string filePath)
+        {
+            // The module path is the project name without "Module" suffix if present
+            var modulePath = projectName.EndsWith("Module") 
+                ? projectName.Substring(0, projectName.Length - "Module".Length) 
+                : projectName;
+            modulePath = modulePath.Replace(".", "").Replace("-", "");
+            
+            var code = $@"//----------------------
+// <auto-generated>
+//     Generated by LazyMagic. Do not edit directly. Changes will be overwritten.
+//     Contains flow-through helper methods for {projectName}ControllerBase.
+// </auto-generated>
+//----------------------
+namespace {projectName}
+{{
+    /// <summary>
+    /// Partial class containing flow-through helper methods.
+    /// These are separated from the main controller base to avoid NSwag processing issues.
+    /// </summary>
+    public partial class {projectName}ControllerBase
+    {{
+        /// <summary>
+        /// The module path prefix that will be stripped from paths when forwarding requests.
+        /// </summary>
+        private const string ModulePathPrefix = ""/{modulePath}/"";
+
+        /// <summary>
+        /// Strips the module path prefix from a path for forwarding to external service.
+        /// E.g., ""/ShopModule/api/orders/123"" becomes ""/api/orders/123""
+        /// </summary>
+        protected virtual string StripModulePrefix(string path)
+        {{
+            if (path.StartsWith(ModulePathPrefix, StringComparison.OrdinalIgnoreCase))
+            {{
+                return path.Substring(ModulePathPrefix.Length - 1); // Keep the leading slash
+            }}
+            // Also handle case without trailing slash in prefix
+            var prefixWithoutSlash = ModulePathPrefix.TrimEnd('/');
+            if (path.StartsWith(prefixWithoutSlash, StringComparison.OrdinalIgnoreCase))
+            {{
+                return path.Substring(prefixWithoutSlash.Length);
+            }}
+            return path;
+        }}
+
+        /// <summary>
+        /// Creates an HttpRequestMessage for flow-through operations, copying all headers from the source request.
+        /// </summary>
+        protected virtual HttpRequestMessage CreateFlowThroughRequest(HttpMethod method, string path, HttpRequest sourceRequest)
+        {{
+            // Strip module prefix before forwarding
+            var forwardPath = StripModulePrefix(path);
+            var request = new HttpRequestMessage(method, forwardPath);
+            
+            // Copy all headers from source request
+            foreach (var header in sourceRequest.Headers)
+            {{
+                // Skip headers that shouldn't be forwarded
+                if (header.Key.Equals(""Host"", StringComparison.OrdinalIgnoreCase) ||
+                    header.Key.Equals(""Content-Length"", StringComparison.OrdinalIgnoreCase) ||
+                    header.Key.Equals(""Transfer-Encoding"", StringComparison.OrdinalIgnoreCase))
+                {{
+                    continue;
+                }}
+                
+                request.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }}
+            
+            return request;
+        }}
+
+        /// <summary>
+        /// Executes a flow-through GET request and returns the response.
+        /// </summary>
+        protected virtual async Task<ActionResult<T>> FlowThroughGetAsync<T>(string path)
+        {{
+            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
+            var request = CreateFlowThroughRequest(HttpMethod.Get, path, this.Request);
+            
+            var response = await client.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {{
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, errorContent);
+            }}
+            
+            var result = await response.Content.ReadFromJsonAsync<T>();
+            return Ok(result);
+        }}
+
+        /// <summary>
+        /// Executes a flow-through GET request that returns IActionResult (no typed response).
+        /// </summary>
+        protected virtual async Task<IActionResult> FlowThroughGetAsync(string path)
+        {{
+            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
+            var request = CreateFlowThroughRequest(HttpMethod.Get, path, this.Request);
+            
+            var response = await client.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {{
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, errorContent);
+            }}
+            
+            var content = await response.Content.ReadAsStringAsync();
+            return Content(content, response.Content.Headers.ContentType?.MediaType ?? ""application/json"");
+        }}
+
+        /// <summary>
+        /// Executes a flow-through GET request that returns a collection.
+        /// </summary>
+        protected virtual async Task<ActionResult<ICollection<T>>> FlowThroughGetCollectionAsync<T>(string path)
+        {{
+            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
+            var request = CreateFlowThroughRequest(HttpMethod.Get, path, this.Request);
+            
+            var response = await client.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {{
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, errorContent);
+            }}
+            
+            var result = await response.Content.ReadFromJsonAsync<ICollection<T>>();
+            return Ok(result);
+        }}
+
+        /// <summary>
+        /// Executes a flow-through POST request with a body and returns the response.
+        /// </summary>
+        protected virtual async Task<ActionResult<T>> FlowThroughPostAsync<T, TBody>(string path, TBody body)
+        {{
+            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
+            var request = CreateFlowThroughRequest(HttpMethod.Post, path, this.Request);
+            request.Content = JsonContent.Create(body);
+            
+            var response = await client.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {{
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, errorContent);
+            }}
+            
+            var result = await response.Content.ReadFromJsonAsync<T>();
+            return Ok(result);
+        }}
+
+        /// <summary>
+        /// Executes a flow-through POST request with a body that returns no content.
+        /// </summary>
+        protected virtual async Task<IActionResult> FlowThroughPostAsync<TBody>(string path, TBody body)
+        {{
+            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
+            var request = CreateFlowThroughRequest(HttpMethod.Post, path, this.Request);
+            request.Content = JsonContent.Create(body);
+            
+            var response = await client.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {{
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, errorContent);
+            }}
+            
+            return Ok();
+        }}
+
+        /// <summary>
+        /// Executes a flow-through PUT request with a body and returns the response.
+        /// </summary>
+        protected virtual async Task<ActionResult<T>> FlowThroughPutAsync<T, TBody>(string path, TBody body)
+        {{
+            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
+            var request = CreateFlowThroughRequest(HttpMethod.Put, path, this.Request);
+            request.Content = JsonContent.Create(body);
+            
+            var response = await client.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {{
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, errorContent);
+            }}
+            
+            var result = await response.Content.ReadFromJsonAsync<T>();
+            return Ok(result);
+        }}
+
+        /// <summary>
+        /// Executes a flow-through PUT request with a body that returns no content.
+        /// </summary>
+        protected virtual async Task<IActionResult> FlowThroughPutAsync<TBody>(string path, TBody body)
+        {{
+            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
+            var request = CreateFlowThroughRequest(HttpMethod.Put, path, this.Request);
+            request.Content = JsonContent.Create(body);
+            
+            var response = await client.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {{
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, errorContent);
+            }}
+            
+            return Ok();
+        }}
+
+        /// <summary>
+        /// Executes a flow-through DELETE request and returns the response.
+        /// </summary>
+        protected virtual async Task<ActionResult<T>> FlowThroughDeleteAsync<T>(string path)
+        {{
+            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
+            var request = CreateFlowThroughRequest(HttpMethod.Delete, path, this.Request);
+            
+            var response = await client.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {{
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, errorContent);
+            }}
+            
+            var result = await response.Content.ReadFromJsonAsync<T>();
+            return Ok(result);
+        }}
+
+        /// <summary>
+        /// Executes a flow-through DELETE request that returns no content.
+        /// </summary>
+        protected virtual async Task<IActionResult> FlowThroughDeleteAsync(string path)
+        {{
+            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
+            var request = CreateFlowThroughRequest(HttpMethod.Delete, path, this.Request);
+            
+            var response = await client.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {{
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return StatusCode((int)response.StatusCode, errorContent);
+            }}
+            
+            return Ok();
+        }}
+    }}
+}}
+";
+            File.WriteAllText(filePath, ReplaceLineEndings(code));
         }
         private static void RemoveAsyncFromInterfaceMethodNames(ref CompilationUnitSyntax root)
         { 
@@ -976,13 +1328,19 @@ namespace {namespaceName}
 
                 });
         }
-        private static void InsertConstructor(ref CompilationUnitSyntax root, string constructorName, List<string> interfaces, List<string> dependencies)
+        private static void InsertConstructor(ref CompilationUnitSyntax root, string constructorName, List<string> interfaces, List<string> dependencies, string operationType = "default")
         {
 
             // Generate constructor arguments of the form "IClassName className"
             var constructorArguments = new List<string>();
             interfaces.ForEach(x => constructorArguments.Add($"{x} {DownCaseFirstChar(x.Substring(1))}")); // Iterfaces have the form "IClassName"
             dependencies.ForEach(x => constructorArguments.Add(x)); // Dependencies have the form "IClassName className"
+
+            // Add IHttpClientFactory for flowthrough operations
+            if (operationType == "flowthrough")
+            {
+                constructorArguments.Add("IHttpClientFactory httpClientFactory");
+            }
 
             var constructorAssignments = new List<string>();
             interfaces.ForEach(x => constructorAssignments.Add($"{x.Substring(1)} = {DownCaseFirstChar(x.Substring(1))};"));
@@ -994,6 +1352,12 @@ namespace {namespaceName}
                 var varname = parts[1];
                 constructorAssignments.Add($"this.{varname} = {varname};");
             });
+
+            // Add HttpClientFactory assignment for flowthrough operations
+            if (operationType == "flowthrough")
+            {
+                constructorAssignments.Add("HttpClientFactory = httpClientFactory;");
+            }
 
             var code =
 $@"
@@ -1253,7 +1617,7 @@ $@"
         /// Transforms methods in interfaces that have x-lz-fromform to use a single parameter
         /// instead of individual form field parameters. Used for client interface generation.
         /// </summary>
-        private static void TransformFromFormMethodsInInterface(ref CompilationUnitSyntax root, Dictionary<string, string> fromFormOperations, string modulePath)
+        private static void TransformFromFormMethodsInInterface(ref CompilationUnitSyntax root, Dictionary<string, string> fromFormOperations, string modulePath, OpenApiDocument openApiDocument = null)
         {
             // Build a set of method names that need transformation
             var methodsToTransform = new Dictionary<string, string>();
@@ -1275,31 +1639,30 @@ $@"
                     var methodName = originalMethod.Identifier.Text;
                     var formTypeName = methodsToTransform[methodName];
 
-                    // Separate parameters into path/query parameters and form parameters
+                    // Get path parameters from OpenAPI document
+                    var pathParamNames = openApiDocument != null 
+                        ? GetPathParametersFromOpenApi(openApiDocument, methodName)
+                        : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    // Separate parameters into path parameters and form parameters
                     var parameters = originalMethod.ParameterList.Parameters;
                     var pathQueryParams = new List<ParameterSyntax>();
+                    var addedPathParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     var hasFormParams = false;
 
                     foreach (var param in parameters)
                     {
-                        // Check if parameter has [FromRoute], [FromQuery], or [FromPath] attribute
-                        var hasRouteOrQueryAttr = param.AttributeLists
-                            .SelectMany(al => al.Attributes)
-                            .Any(a =>
-                            {
-                                var attrName = a.Name.ToString();
-                                return attrName.Contains("FromRoute") ||
-                                       attrName.Contains("FromQuery") ||
-                                       attrName.Contains("FromPath");
-                            });
-
-                        if (hasRouteOrQueryAttr)
+                        var paramName = param.Identifier.Text;
+                        
+                        // Keep path parameters (avoid duplicates from form data)
+                        if (pathParamNames.Contains(paramName) && !addedPathParams.Contains(paramName))
                         {
                             pathQueryParams.Add(param);
+                            addedPathParams.Add(paramName);
                         }
                         else
                         {
-                            // This is likely a form parameter - we'll replace all of them
+                            // This is a form parameter - we'll replace all of them
                             hasFormParams = true;
                         }
                     }
@@ -1322,9 +1685,10 @@ $@"
                 });
         }
 
-        private static void UpdateControllerMethodBodies(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, string projectName)
+        private static void UpdateControllerMethodBodies(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, string projectName, string operationType)
         {
             var methodExtensions = MethodExtensionsData(openApiDocument); // Dictionary<operationId, Dictionary<extensionKey, extensionValue>>   
+            var operationDetails = GetOperationDetails(openApiDocument); // Dictionary<operationId, (httpMethod, path, returnType, hasBody)>
 
             var code = root.ToFullString();
             var yaml = openApiDocument.ToYaml();
@@ -1337,6 +1701,12 @@ $@"
                             string body = string.Empty;
                             string indent = "            ";
                             var methodName = originalMethod.Identifier.Text;
+                            
+                            // Skip the Init method - it has its own implementation
+                            if (methodName == "Init")
+                            {
+                                return originalMethod;
+                            }
                             if (methodExtensions.TryGetValue(methodName, out var extensions))
                             {
                                 if (extensions.ContainsKey("x-lz-gencall"))
@@ -1345,12 +1715,22 @@ $@"
                                     // If the gencall starts with "throw", don't wrap with "return await"
                                     if (gencallValue.TrimStart().StartsWith("throw", StringComparison.OrdinalIgnoreCase))
                                     {
-                                        body = $"{indent}{gencallValue}";
+                                        body = $"{indent}throw new NotImplementedException();";
                                     }
                                     else
                                     {
-                                        body = $"{indent}var callerInfo = await {projectName}Authorization.GetCallerInfoAsync(this.Request);";
-                                        body += $"\r\n{indent}return await {gencallValue};";
+                                        switch(operationType)
+                                        {
+                                            case "default":
+                                                body = $"{indent}var callerInfo = await {projectName}Authorization.GetCallerInfoAsync(this.Request);";
+                                                body += $"\r\n{indent}return await {gencallValue};";
+                                                break;
+                                            case "flowthrough":
+                                                body = GenerateFlowThroughMethodBody(methodName, originalMethod, operationDetails, projectName, indent);
+                                                break;
+                                            default:
+                                                throw new Exception($"Unknown OperationType: {operationType}");
+                                        }
                                     }
                                 }
                             }
@@ -1368,6 +1748,368 @@ $@"
                             return updatedMethod.WithBody(newBodySyntax);
                         });
             code = root.ToFullString();
+        }
+
+        /// <summary>
+        /// Gets operation details (HTTP method, path, return type, has body) for each operation in the OpenAPI document.
+        /// </summary>
+        private static Dictionary<string, (string httpMethod, string path, string returnType, bool hasBody, bool isCollection)> GetOperationDetails(OpenApiDocument openApiDocument)
+        {
+            var details = new Dictionary<string, (string httpMethod, string path, string returnType, bool hasBody, bool isCollection)>();
+
+            foreach (var pathKvp in openApiDocument.Paths)
+            {
+                var path = pathKvp.Key;
+                foreach (var operationKvp in pathKvp.Value)
+                {
+                    var httpMethod = operationKvp.Key; // "get", "post", etc.
+                    var operation = operationKvp.Value;
+                    
+                    if (string.IsNullOrEmpty(operation.OperationId))
+                        continue;
+
+                    // Determine return type from response schema
+                    var returnType = "object";
+                    var isCollection = false;
+                    var successResponse = operation.Responses.FirstOrDefault(r => r.Key.StartsWith("2"));
+                    
+                    // Try to get schema from response - check ActualResponse first, then Content
+                    NJsonSchema.JsonSchema schema = null;
+                    if (successResponse.Value != null)
+                    {
+                        // Try ActualResponse.Schema first (resolved schema)
+                        schema = successResponse.Value.ActualResponse?.Schema;
+                        
+                        // If not found, try Content (OpenAPI 3.0 style)
+                        if (schema == null && successResponse.Value.Content != null && successResponse.Value.Content.Count > 0)
+                        {
+                            // Get schema from first content type (typically application/json)
+                            var contentSchema = successResponse.Value.Content.Values.FirstOrDefault()?.Schema;
+                            if (contentSchema != null)
+                            {
+                                schema = contentSchema;
+                            }
+                        }
+                        
+                        // Fallback to direct Schema property
+                        if (schema == null)
+                        {
+                            schema = successResponse.Value.Schema;
+                        }
+                    }
+                    
+                    if (schema != null)
+                    {
+                        if (schema.Type == NJsonSchema.JsonObjectType.Array && schema.Item != null)
+                        {
+                            isCollection = true;
+                            returnType = GetTypeNameFromSchema(schema.Item);
+                        }
+                        else
+                        {
+                            returnType = GetTypeNameFromSchema(schema);
+                        }
+                    }
+                    else
+                    {
+                        returnType = "void";
+                    }
+
+                    // Check if operation has a request body
+                    var hasBody = operation.RequestBody != null;
+
+                    details[operation.OperationId] = (httpMethod, path, returnType, hasBody, isCollection);
+                }
+            }
+
+            return details;
+        }
+
+        /// <summary>
+        /// Gets the C# type name from an OpenAPI schema.
+        /// </summary>
+        private static string GetTypeNameFromSchema(NJsonSchema.JsonSchema schema)
+        {
+            if (schema == null)
+                return "object";
+
+            // For NJsonSchema, ActualSchema resolves references
+            var actualSchema = schema.ActualSchema ?? schema;
+            
+            // Check DocumentPath - contains full path like "#/components/schemas/AppSettingVm"
+            var docPath = actualSchema.DocumentPath;
+            if (!string.IsNullOrEmpty(docPath) && docPath.Contains("/schemas/"))
+            {
+                var lastSlash = docPath.LastIndexOf('/');
+                if (lastSlash >= 0 && lastSlash < docPath.Length - 1)
+                {
+                    return docPath.Substring(lastSlash + 1);
+                }
+            }
+
+            // Check if HasReference and get from reference path
+            if (schema.HasReference && schema.Reference != null)
+            {
+                var refPath = schema.Reference.DocumentPath;
+                if (!string.IsNullOrEmpty(refPath) && refPath.Contains("/schemas/"))
+                {
+                    var lastSlash = refPath.LastIndexOf('/');
+                    if (lastSlash >= 0 && lastSlash < refPath.Length - 1)
+                    {
+                        return refPath.Substring(lastSlash + 1);
+                    }
+                }
+            }
+
+            // Check Id property
+            if (!string.IsNullOrEmpty(actualSchema.Id))
+                return actualSchema.Id;
+            
+            // Check Title property
+            if (!string.IsNullOrEmpty(actualSchema.Title))
+                return actualSchema.Title;
+
+            // Handle primitive types
+            switch (actualSchema.Type)
+            {
+                case NJsonSchema.JsonObjectType.String:
+                    return "string";
+                case NJsonSchema.JsonObjectType.Integer:
+                    return actualSchema.Format == "int64" ? "long" : "int";
+                case NJsonSchema.JsonObjectType.Number:
+                    return actualSchema.Format == "float" ? "float" : "double";
+                case NJsonSchema.JsonObjectType.Boolean:
+                    return "bool";
+                default:
+                    return "object";
+            }
+        }
+
+        /// <summary>
+        /// Generates the method body for flow-through operations.
+        /// </summary>
+        private static string GenerateFlowThroughMethodBody(
+            string methodName,
+            MethodDeclarationSyntax method,
+            Dictionary<string, (string httpMethod, string path, string returnType, bool hasBody, bool isCollection)> operationDetails,
+            string projectName,
+            string indent)
+        {
+            if (!operationDetails.TryGetValue(methodName, out var details))
+            {
+                return $"{indent}throw new NotImplementedException(\"Operation details not found for {methodName}\");";
+            }
+
+            var (httpMethod, path, _, hasBody, _) = details;
+
+            // Extract return type directly from method signature - NSwag already has the correct type
+            var (returnType, isCollection, hasReturnValue) = ExtractReturnTypeFromMethod(method);
+
+            // Build the path with parameter substitution
+            var pathExpression = ConvertPathToInterpolatedString(path, method);
+
+            // Check if method has a 'body' parameter - if not, we can't pass it
+            var hasBodyParameter = method.ParameterList.Parameters.Any(p => p.Identifier.Text == "body");
+            
+            // If OpenAPI says there's a body but there's no body parameter, don't pass body
+            var shouldPassBody = hasBody && hasBodyParameter;
+
+            var body = new System.Text.StringBuilder();
+
+            if (httpMethod.Equals("get", StringComparison.OrdinalIgnoreCase))
+            {
+                if (isCollection)
+                {
+                    body.AppendLine($"{indent}return await FlowThroughGetCollectionAsync<{returnType}>({pathExpression});");
+                }
+                else if (hasReturnValue)
+                {
+                    body.AppendLine($"{indent}return await FlowThroughGetAsync<{returnType}>({pathExpression});");
+                }
+                else
+                {
+                    // IActionResult return - use non-generic version
+                    body.AppendLine($"{indent}return await FlowThroughGetAsync({pathExpression});");
+                }
+            }
+            else if (httpMethod.Equals("post", StringComparison.OrdinalIgnoreCase))
+            {
+                if (shouldPassBody)
+                {
+                    if (hasReturnValue)
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPostAsync<{returnType}, object>({pathExpression}, body);");
+                    }
+                    else
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPostAsync({pathExpression}, body);");
+                    }
+                }
+                else
+                {
+                    if (hasReturnValue)
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPostAsync<{returnType}, object>({pathExpression}, new {{}});");
+                    }
+                    else
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPostAsync({pathExpression}, new {{}});");
+                    }
+                }
+            }
+            else if (httpMethod.Equals("put", StringComparison.OrdinalIgnoreCase))
+            {
+                if (shouldPassBody)
+                {
+                    if (hasReturnValue)
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>({pathExpression}, body);");
+                    }
+                    else
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync({pathExpression}, body);");
+                    }
+                }
+                else
+                {
+                    if (hasReturnValue)
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>({pathExpression}, new {{}});");
+                    }
+                    else
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync({pathExpression}, new {{}});");
+                    }
+                }
+            }
+            else if (httpMethod.Equals("delete", StringComparison.OrdinalIgnoreCase))
+            {
+                if (hasReturnValue)
+                {
+                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync<{returnType}>({pathExpression});");
+                }
+                else
+                {
+                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync({pathExpression});");
+                }
+            }
+            else if (httpMethod.Equals("patch", StringComparison.OrdinalIgnoreCase))
+            {
+                // PATCH uses same pattern as PUT
+                if (shouldPassBody)
+                {
+                    if (hasReturnValue)
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>({pathExpression}, body);");
+                    }
+                    else
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync({pathExpression}, body);");
+                    }
+                }
+                else
+                {
+                    if (hasReturnValue)
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>({pathExpression}, new {{}});");
+                    }
+                    else
+                    {
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync({pathExpression}, new {{}});");
+                    }
+                }
+            }
+            else
+            {
+                body.AppendLine($"{indent}throw new NotImplementedException(\"Unsupported HTTP method: {httpMethod}\");");
+            }
+
+            return body.ToString().TrimEnd();
+        }
+
+        /// <summary>
+        /// Extracts the return type from a method's signature.
+        /// Handles Task<ActionResult<T>>, Task<ActionResult<ICollection<T>>>, Task<IActionResult>, etc.
+        /// </summary>
+        private static (string returnType, bool isCollection, bool hasReturnValue) ExtractReturnTypeFromMethod(MethodDeclarationSyntax method)
+        {
+            var returnTypeStr = method.ReturnType.ToString();
+            
+            // Check for IActionResult (no return value)
+            if (returnTypeStr.Contains("IActionResult") && !returnTypeStr.Contains("ActionResult<"))
+            {
+                return ("void", false, false);
+            }
+
+            // Check for ActionResult<ICollection<T>> or ActionResult<IEnumerable<T>> etc.
+            var collectionMatch = Regex.Match(returnTypeStr, @"ActionResult<(?:System\.Collections\.Generic\.)?(?:ICollection|IEnumerable|IList|List)<([^>]+)>>");
+            if (collectionMatch.Success)
+            {
+                var itemType = collectionMatch.Groups[1].Value;
+                return (itemType, true, true);
+            }
+
+            // Check for ActionResult<T>
+            var actionResultMatch = Regex.Match(returnTypeStr, @"ActionResult<([^>]+)>");
+            if (actionResultMatch.Success)
+            {
+                var innerType = actionResultMatch.Groups[1].Value;
+                return (innerType, false, true);
+            }
+
+            // Fallback
+            return ("object", false, true);
+        }
+
+        /// <summary>
+        /// Converts an OpenAPI path template to a C# interpolated string expression.
+        /// E.g., "/api/orders/{id}" becomes $"/api/orders/{id}"
+        /// Handles NSwag's parameter renaming (e.g., id -> idPath when there's also idQuery)
+        /// </summary>
+        private static string ConvertPathToInterpolatedString(string path, MethodDeclarationSyntax method)
+        {
+            // Get parameter names from method signature for case-sensitive matching
+            var paramNames = method.ParameterList.Parameters
+                .Select(p => p.Identifier.Text)
+                .ToList();
+
+            // Check if path contains any parameters
+            if (!path.Contains("{"))
+            {
+                return $"\"{path}\"";
+            }
+
+            // Extract path parameter names from the template (e.g., {id}, {orderId})
+            var pathParamMatches = Regex.Matches(path, @"\{([^}]+)\}");
+            var result = path;
+            
+            foreach (Match match in pathParamMatches)
+            {
+                var pathParamName = match.Groups[1].Value;
+                
+                // Look for exact match first
+                var exactMatch = paramNames.FirstOrDefault(p => 
+                    p.Equals(pathParamName, StringComparison.OrdinalIgnoreCase));
+                
+                if (exactMatch != null)
+                {
+                    // Found exact match - use it
+                    result = Regex.Replace(result, $@"\{{{pathParamName}\}}", $"{{{exactMatch}}}", RegexOptions.IgnoreCase);
+                }
+                else
+                {
+                    // Look for renamed parameter (NSwag adds "Path" suffix when there's a conflict)
+                    var pathSuffixMatch = paramNames.FirstOrDefault(p => 
+                        p.Equals(pathParamName + "Path", StringComparison.OrdinalIgnoreCase));
+                    
+                    if (pathSuffixMatch != null)
+                    {
+                        result = Regex.Replace(result, $@"\{{{pathParamName}\}}", $"{{{pathSuffixMatch}}}", RegexOptions.IgnoreCase);
+                    }
+                }
+            }
+
+            return $"$\"{result}\"";
         }
         private static string FixNswagSyntax(string code)
         {
@@ -1441,10 +2183,71 @@ $@"
             // Replace the old class with the updated class in the syntax tree
             root = root.ReplaceNode(interfaceDeclaration, updatedInterface);
         }
-        private static void GenerateServiceRegistrationsClass(string projectName, string nameSpace, List<string> interfaces, string filePath, string controllerLifetime)
+        private static void GenerateServiceRegistrationsClass(string projectName, string nameSpace, List<string> interfaces, string filePath, string controllerLifetime, string operationType = "default")
         {
             var registrations = new List<string>();
             interfaces.ForEach(x => registrations.Add($"services.{x}();")); 
+
+            var httpClientRegistration = "";
+            var additionalUsings = "";
+            
+            if (operationType == "flowthrough")
+            {
+                // NOTE: Flowthrough operations require the Microsoft.Extensions.Http.Polly package.
+                // This is added to Packages.g.props automatically.
+                // The global usings for Polly are added to GlobalUsing.g.cs automatically.
+                additionalUsings = "";
+                httpClientRegistration = $@"
+            // Register HttpClient for flow-through operations with Polly retry and circuit breaker policies
+            services.AddHttpClient(""{projectName}FlowThrough"", client =>
+            {{
+                var baseUrl = Environment.GetEnvironmentVariable(""LZ_FLOWTHROUGH_{projectName.ToUpper()}_URL"") 
+                    ?? ""http://localhost:8080/"";
+                client.BaseAddress = new Uri(baseUrl);
+                
+                var timeout = Environment.GetEnvironmentVariable(""LZ_FLOWTHROUGH_{projectName.ToUpper()}_TIMEOUT"");
+                if (int.TryParse(timeout, out var timeoutSeconds))
+                {{
+                    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+                }}
+                else
+                {{
+                    client.Timeout = TimeSpan.FromSeconds(30);
+                }}
+            }})
+            .AddPolicyHandler(GetRetryPolicy())
+            .AddPolicyHandler(GetCircuitBreakerPolicy());
+";
+            }
+
+            var pollyMethods = "";
+            if (operationType == "flowthrough")
+            {
+                pollyMethods = $@"
+
+        /// <summary>
+        /// Creates a retry policy for transient HTTP errors.
+        /// Retries 3 times with exponential backoff (2, 4, 8 seconds).
+        /// </summary>
+        private static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+        {{
+            return HttpPolicyExtensions
+                .HandleTransientHttpError()
+                .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
+        }}
+
+        /// <summary>
+        /// Creates a circuit breaker policy.
+        /// Opens circuit after 5 consecutive failures, stays open for 30 seconds.
+        /// </summary>
+        private static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
+        {{
+            return HttpPolicyExtensions
+                .HandleTransientHttpError()
+                .CircuitBreakerAsync(5, TimeSpan.FromSeconds(30));
+        }}";
+            }
 
             var classbody = $@"
 //----------------------
@@ -1453,7 +2256,7 @@ $@"
 //     Implement another class for registrations not directly generated by LazyMagic.
 // </auto-generated>
 //----------------------
-namespace {nameSpace}
+{additionalUsings}namespace {nameSpace}
 {{
     public static partial class {projectName}Registrations 
     {{
@@ -1461,11 +2264,11 @@ namespace {nameSpace}
         {{
             services.TryAddSingleton<I{projectName}Authorization, {projectName}Authorization>();
             services.TryAdd{controllerLifetime}<I{projectName}Controller, {projectName}Controller>();
-            {string.Join("\r\n\t\t\t", registrations.Select(x => x))}
+            {string.Join("\r\n\t\t\t", registrations.Select(x => x))}{httpClientRegistration}
             CustomConfigurations(services);
             return services;            
         }}
-        static partial void CustomConfigurations(IServiceCollection sdervices);
+        static partial void CustomConfigurations(IServiceCollection sdervices);{pollyMethods}
     }}
 }}
 ";

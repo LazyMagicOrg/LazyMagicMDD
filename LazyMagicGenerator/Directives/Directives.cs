@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using YamlDotNet.Serialization;
 using System.Threading.Tasks;
 using System.Linq;
@@ -128,6 +128,20 @@ namespace LazyMagic
             foreach(var schemaName in schemaNames)
             {
                 var schema = (Schema)this[schemaName];
+                await schema.GenerateAsync(solution);
+            }
+
+            // Process non-shared schemas (SharedSchemas: false)
+            // These schemas don't participate in dependency resolution with other schemas
+            // but still need their artifacts generated
+            var nonSharedSchemas = this.Values
+                .Where(x => x.Type.Equals("Schema") && !x.IsDefault)
+                .Select(x => (Schema)x)
+                .Where(x => !x.SharedSchemas)
+                .ToList();
+
+            foreach (var schema in nonSharedSchemas)
+            {
                 await schema.GenerateAsync(solution);
             }
         }
