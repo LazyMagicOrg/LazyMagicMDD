@@ -47,7 +47,9 @@ namespace LazyMagic
         public List<string> Schemas { get; set; } = new List<string>();
         public List<string> Entities { get; set; } = new List<string>();  
         public List<string> ReferencedEntities { get; set; } = new List<string>();
+        public bool SharedSchemas { get; set; } = true;
         public override void AssignDefaults(Directives directives) => AssignDefaults(directives, this.GetType());
+
         public override void Validate(Directives directives)
         {
             base.Validate(directives);

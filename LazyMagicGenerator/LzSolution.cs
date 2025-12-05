@@ -95,16 +95,24 @@ namespace LazyMagic
         }
         private async Task LoadAggregateSchemas()
         {
-            AggregateSchemas = await LoadOpenApiFilesAsync(
-                SolutionRootFolderPath,
-                Directives.Values
-                    .OfType<Schema>()
-                    .SelectMany(s => s.OpenApiSpecs)
-                    .Distinct()
-                    .ToList()
-            );
-            AggregateSchemas.Paths.Clear(); // We only want the schemas
+            try
+            {
+                AggregateSchemas = await LoadOpenApiFilesAsync(
+                    SolutionRootFolderPath,
+                    Directives.Values
+                        .OfType<Schema>()
+                        .SelectMany(s => s.OpenApiSpecs)
+                        .Distinct()
+                        .ToList()
+                );
+                AggregateSchemas.Paths.Clear(); // We only want the schemas
+            }
+            catch (Exception ex)
+            {
+                var msg = $"OpenAPI schema load failed. {ex.Message}";
+                await LzLogger.InfoAsync(msg);
+                throw new Exception(msg);
+            }
         }
-
     }
 }

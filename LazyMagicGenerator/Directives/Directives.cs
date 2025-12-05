@@ -71,6 +71,7 @@ namespace LazyMagic
             var schemas = this.Values
                 .Where(x => x.Type.Equals("Schema") && !x.IsDefault)
                 .Select(x => (Schema)x)
+                .Where(x => x.SharedSchemas)
                 .ToList();
 
             await InfoAsync("Finding Schema Entities:");
@@ -164,7 +165,7 @@ namespace LazyMagic
                     // get a list of the minimal set of Schema directive references required to provide the required
                     // schema entities
                     var schemas = GetSchemaNamesForEntities(solution, schemaEntities);
-                    module.Schemas = schemas;
+                    module.Schemas = module.Schemas.Concat(schemas).Distinct().ToList();
                 } catch (Exception ex)
                 {
                     throw new Exception($"Module: {module.Key}. Error: {ex.Message}");

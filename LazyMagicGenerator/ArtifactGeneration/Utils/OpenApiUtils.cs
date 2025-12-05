@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using YamlDotNet.Core;
 using YamlDotNet.RepresentationModel;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -32,8 +33,37 @@ namespace LazyMagic
         {
             try
             {
+                var deserializer = new DeserializerBuilder().Build();
+                var reader = new StringReader(content);
+                var yamlObject = deserializer.Deserialize(reader);
+            }
+            catch (YamlException ex)
+            {
+                throw new Exception(
+                    $"YAML syntax error at line {ex.Start.Line}, column {ex.Start.Column}: {ex.Message}",
+                    ex);
+            }
+
+            try
+            {
                 var openApiDocument = await OpenApiYamlDocument.FromYamlAsync(content);
                 return openApiDocument;
+            }
+            catch (YamlException yamlEx)
+            {
+                var lines = content.Split('\n');
+                var errorLine = yamlEx.Start.Line > 0 && yamlEx.Start.Line <= lines.Length
+                    ? lines[yamlEx.Start.Line - 1]
+                    : "(unable to retrieve line)";
+                var message = $@"
+YAML parsing error:
+Line {yamlEx.Start.Line}, Column {yamlEx.Start.Column}
+Content: {errorLine.Trim()}
+Error: {yamlEx.InnerException?.Message ?? yamlEx.Message}
+";
+
+                await InfoAsync($"\n{message}");
+                throw new Exception(message, yamlEx);
             }
             catch (Exception ex)
             {
@@ -372,7 +402,8 @@ namespace LazyMagic
                     char.ToUpper(part[0]) + part.Substring(1).ToLower();
             }));
 
-           return op.Replace('.', '_').Replace('-','_'); // Replace charaters that are not valid in C# identifiers
+           //return op.Replace('.', '_').Replace('-','_'); // Replace charaters that are not valid in C# identifiers
+            return op.Replace(".", "").Replace("-", ""); // Replace charaters that are not valid in C# identifiers
         }
     }
 }
