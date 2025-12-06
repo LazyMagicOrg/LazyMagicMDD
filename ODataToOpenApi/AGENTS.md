@@ -208,6 +208,7 @@ var settings = new OpenApiConvertSettings
 | `CS0246: 'Response' could not be found` | Inline schema in response not extracted | Rule 4: Extract from `components/responses` |
 | YAML parse error on `type` field | `type` is an array, not string | Rule 7: Convert type arrays |
 | Stack overflow during processing | Circular references in OpenAPI object model | Use YAML string manipulation instead of object model |
+| Interface/implementation mismatch | NSwag serialization appends `/schema` to parameter refs | Fixed in LazyMagicMDD's `DotNetControllerProject.FixParameterReferences()` |
 
 ## Dependencies
 

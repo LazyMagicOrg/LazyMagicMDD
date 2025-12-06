@@ -106,7 +106,10 @@ namespace LazyMagic
                     }
                 }
                 var openApiDocumentYanl = openApiDocument.ToYaml();
-
+                
+                // Fix NSwag serialization bug: parameter references incorrectly get /schema appended
+                // e.g., '#/components/parameters/top/schema' should be '#/components/parameters/top'
+                openApiDocumentYanl = FixParameterReferences(openApiDocumentYanl);
 
                 var openApiSpecs = directive.OpenApiSpecs ?? new List<string>();
                 var schemas = directive.Schemas;
@@ -2119,6 +2122,20 @@ $@"
             code = code.Replace("Microsoft.AspNetCore.Mvc.HttpUPDATE", "Microsoft.AspNetCore.Mvc.HttpUpdate");
             code = code.Replace("Microsoft.AspNetCore.Mvc.HttpDELETE", "Microsoft.AspNetCore.Mvc.HttpDelete");
             return code;
+        }
+        
+        /// <summary>
+        /// Fixes NSwag serialization bug where parameter references incorrectly get /schema appended.
+        /// e.g., '#/components/parameters/top/schema' should be '#/components/parameters/top'
+        /// </summary>
+        private static string FixParameterReferences(string yaml)
+        {
+            // Fix parameter references that have /schema appended
+            // Pattern: '#/components/parameters/{paramName}/schema' -> '#/components/parameters/{paramName}'
+            return System.Text.RegularExpressions.Regex.Replace(
+                yaml, 
+                @"'#/components/parameters/([^']+)/schema'", 
+                "'#/components/parameters/$1'");
         }
         private static string DownCaseFirstChar(string token)
         {
