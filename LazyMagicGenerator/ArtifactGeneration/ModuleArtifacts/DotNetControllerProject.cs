@@ -38,6 +38,8 @@ namespace LazyMagic
         public string OperationType { get; set; } = "default";
         public string FlowThroughDomain { get; set; } = "";
         public string FlowThroughPort { get; set; } = "";
+        public bool AutoGenCall { get; set; } = false;   
+        public string FlowThroughHelpersTpl { get; set; } = "ProjectTemplates/Controller/FlowThroughHelpers.tpl";
 
         public string ControllerLifetime { get; set; } = "Singleton";
         public bool GenerateClientInterface { get; set; } = true;
@@ -172,6 +174,8 @@ namespace LazyMagic
                 }
 
                 // Copy the template project to the target project. Removes *.g.* files.
+                var flowThroughHelpersTplPath = CombinePath(solution.SolutionRootFolderPath, FlowThroughHelpersTpl);
+                var flowThroughHelpersTpl = File.ReadAllText(flowThroughHelpersTplPath);
                 var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
                 var csprojFileName = GetCsprojFile(sourceProjectDir);
@@ -264,7 +268,7 @@ namespace LazyMagic
 
                 root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
 
-                GenerateBaseClass(ref root, openApiDocument, interfaces, Dependencies, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}ControllerBase") + ".g.cs", OperationType);
+                GenerateBaseClass(ref root, openApiDocument, interfaces, Dependencies, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}ControllerBase") + ".g.cs", OperationType, AutoGenCall, flowThroughHelpersTpl);
 
                 GenerateAuthorizationClass(ref root, openApiDocument, projectName, nameSpace, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Authorization") + ".g.cs");
 
@@ -858,7 +862,15 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
 ";
             File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
         }
-        private static void GenerateBaseClass(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, List<string> interfaces, List<string> dependencies, string projectName, string filePath, string operationType)
+        private static void GenerateBaseClass(ref CompilationUnitSyntax root, 
+            OpenApiDocument openApiDocument, 
+            List<string> interfaces, 
+            List<string> dependencies, 
+            string projectName, 
+            string filePath, 
+            string operationType, 
+            bool autoGenCall, 
+            string flowThroughHelpersTpl)
         {
             InsertPragma(ref root, "1998", "Disable async warning."); // Disable async warning
 
@@ -874,14 +886,14 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
                 InsertMemberIntoClass(ref root, "\r\n\t\tpublic IHttpClientFactory HttpClientFactory { get; set; }");
                 // Generate the flowthrough helpers in a separate file to avoid NSwag processing issues
                 var flowthroughFilePath = filePath.Replace("ControllerBase.g.cs", "FlowThroughHelpers.g.cs");
-                GenerateFlowThroughHelpersFile(projectName, flowthroughFilePath);
+                GenerateFlowThroughHelpersFile(projectName, flowthroughFilePath, flowThroughHelpersTpl);
             }
 
             EnsureMethodsHaveAsyncSuffix(ref root); // Ensure all methods have Async suffix to match interface
 
             MarkMethodsVirtualAsync(ref root); // Make all methods virtual async 
 
-            UpdateControllerMethodBodies(ref root, openApiDocument, projectName, operationType); // Use x-lz-gencall attributes to generate method bodies   
+            UpdateControllerMethodBodies(ref root, openApiDocument, projectName, operationType, autoGenCall); // Use x-lz-gencall attributes to generate method bodies   
 
             InsertMethodIntoClass(ref root, "\r\n\t\tprotected virtual void Init() { }"); // Add Init method
 
@@ -896,7 +908,7 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
         /// Generates a separate file containing flow-through helper methods as a partial class.
         /// This avoids issues with NSwag processing (async suffix addition, method body replacement).
         /// </summary>
-        private static void GenerateFlowThroughHelpersFile(string projectName, string filePath)
+        private static void GenerateFlowThroughHelpersFile(string projectName, string filePath, string flowThroughHelpersTpl)
         {
             // The module path is the project name without "Module" suffix if present
             var modulePath = projectName.EndsWith("Module") 
@@ -904,253 +916,9 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
                 : projectName;
             modulePath = modulePath.Replace(".", "").Replace("-", "");
             
-            var code = $@"//----------------------
-// <auto-generated>
-//     Generated by LazyMagic. Do not edit directly. Changes will be overwritten.
-//     Contains flow-through helper methods for {projectName}ControllerBase.
-// </auto-generated>
-//----------------------
-namespace {projectName}
-{{
-    /// <summary>
-    /// Partial class containing flow-through helper methods.
-    /// These are separated from the main controller base to avoid NSwag processing issues.
-    /// </summary>
-    public partial class {projectName}ControllerBase
-    {{
-        /// <summary>
-        /// The module path prefix that will be stripped from paths when forwarding requests.
-        /// </summary>
-        private const string ModulePathPrefix = ""/{modulePath}/"";
-
-        /// <summary>
-        /// Strips the module path prefix from a path for forwarding to external service.
-        /// E.g., ""/ShopModule/api/orders/123"" becomes ""/api/orders/123""
-        /// </summary>
-        protected virtual string StripModulePrefix(string path)
-        {{
-            if (path.StartsWith(ModulePathPrefix, StringComparison.OrdinalIgnoreCase))
-            {{
-                return path.Substring(ModulePathPrefix.Length - 1); // Keep the leading slash
-            }}
-            // Also handle case without trailing slash in prefix
-            var prefixWithoutSlash = ModulePathPrefix.TrimEnd('/');
-            if (path.StartsWith(prefixWithoutSlash, StringComparison.OrdinalIgnoreCase))
-            {{
-                return path.Substring(prefixWithoutSlash.Length);
-            }}
-            return path;
-        }}
-
-        /// <summary>
-        /// Creates an HttpRequestMessage for flow-through operations, copying all headers from the source request.
-        /// </summary>
-        protected virtual HttpRequestMessage CreateFlowThroughRequest(HttpMethod method, string path, HttpRequest sourceRequest)
-        {{
-            // Strip module prefix before forwarding
-            var forwardPath = StripModulePrefix(path);
-            var request = new HttpRequestMessage(method, forwardPath);
-            
-            // Copy all headers from source request
-            foreach (var header in sourceRequest.Headers)
-            {{
-                // Skip headers that shouldn't be forwarded
-                if (header.Key.Equals(""Host"", StringComparison.OrdinalIgnoreCase) ||
-                    header.Key.Equals(""Content-Length"", StringComparison.OrdinalIgnoreCase) ||
-                    header.Key.Equals(""Transfer-Encoding"", StringComparison.OrdinalIgnoreCase))
-                {{
-                    continue;
-                }}
-                
-                request.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
-            }}
-            
-            return request;
-        }}
-
-        /// <summary>
-        /// Executes a flow-through GET request and returns the response.
-        /// </summary>
-        protected virtual async Task<ActionResult<T>> FlowThroughGetAsync<T>(string path)
-        {{
-            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
-            var request = CreateFlowThroughRequest(HttpMethod.Get, path, this.Request);
-            
-            var response = await client.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {{
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, errorContent);
-            }}
-            
-            var result = await response.Content.ReadFromJsonAsync<T>();
-            return Ok(result);
-        }}
-
-        /// <summary>
-        /// Executes a flow-through GET request that returns IActionResult (no typed response).
-        /// </summary>
-        protected virtual async Task<IActionResult> FlowThroughGetAsync(string path)
-        {{
-            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
-            var request = CreateFlowThroughRequest(HttpMethod.Get, path, this.Request);
-            
-            var response = await client.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {{
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, errorContent);
-            }}
-            
-            var content = await response.Content.ReadAsStringAsync();
-            return Content(content, response.Content.Headers.ContentType?.MediaType ?? ""application/json"");
-        }}
-
-        /// <summary>
-        /// Executes a flow-through GET request that returns a collection.
-        /// </summary>
-        protected virtual async Task<ActionResult<ICollection<T>>> FlowThroughGetCollectionAsync<T>(string path)
-        {{
-            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
-            var request = CreateFlowThroughRequest(HttpMethod.Get, path, this.Request);
-            
-            var response = await client.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {{
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, errorContent);
-            }}
-            
-            var result = await response.Content.ReadFromJsonAsync<ICollection<T>>();
-            return Ok(result);
-        }}
-
-        /// <summary>
-        /// Executes a flow-through POST request with a body and returns the response.
-        /// </summary>
-        protected virtual async Task<ActionResult<T>> FlowThroughPostAsync<T, TBody>(string path, TBody body)
-        {{
-            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
-            var request = CreateFlowThroughRequest(HttpMethod.Post, path, this.Request);
-            request.Content = JsonContent.Create(body);
-            
-            var response = await client.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {{
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, errorContent);
-            }}
-            
-            var result = await response.Content.ReadFromJsonAsync<T>();
-            return Ok(result);
-        }}
-
-        /// <summary>
-        /// Executes a flow-through POST request with a body that returns no content.
-        /// </summary>
-        protected virtual async Task<IActionResult> FlowThroughPostAsync<TBody>(string path, TBody body)
-        {{
-            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
-            var request = CreateFlowThroughRequest(HttpMethod.Post, path, this.Request);
-            request.Content = JsonContent.Create(body);
-            
-            var response = await client.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {{
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, errorContent);
-            }}
-            
-            return Ok();
-        }}
-
-        /// <summary>
-        /// Executes a flow-through PUT request with a body and returns the response.
-        /// </summary>
-        protected virtual async Task<ActionResult<T>> FlowThroughPutAsync<T, TBody>(string path, TBody body)
-        {{
-            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
-            var request = CreateFlowThroughRequest(HttpMethod.Put, path, this.Request);
-            request.Content = JsonContent.Create(body);
-            
-            var response = await client.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {{
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, errorContent);
-            }}
-            
-            var result = await response.Content.ReadFromJsonAsync<T>();
-            return Ok(result);
-        }}
-
-        /// <summary>
-        /// Executes a flow-through PUT request with a body that returns no content.
-        /// </summary>
-        protected virtual async Task<IActionResult> FlowThroughPutAsync<TBody>(string path, TBody body)
-        {{
-            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
-            var request = CreateFlowThroughRequest(HttpMethod.Put, path, this.Request);
-            request.Content = JsonContent.Create(body);
-            
-            var response = await client.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {{
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, errorContent);
-            }}
-            
-            return Ok();
-        }}
-
-        /// <summary>
-        /// Executes a flow-through DELETE request and returns the response.
-        /// </summary>
-        protected virtual async Task<ActionResult<T>> FlowThroughDeleteAsync<T>(string path)
-        {{
-            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
-            var request = CreateFlowThroughRequest(HttpMethod.Delete, path, this.Request);
-            
-            var response = await client.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {{
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, errorContent);
-            }}
-            
-            var result = await response.Content.ReadFromJsonAsync<T>();
-            return Ok(result);
-        }}
-
-        /// <summary>
-        /// Executes a flow-through DELETE request that returns no content.
-        /// </summary>
-        protected virtual async Task<IActionResult> FlowThroughDeleteAsync(string path)
-        {{
-            var client = HttpClientFactory.CreateClient(""{projectName}FlowThrough"");
-            var request = CreateFlowThroughRequest(HttpMethod.Delete, path, this.Request);
-            
-            var response = await client.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {{
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, errorContent);
-            }}
-            
-            return Ok();
-        }}
-    }}
-}}
-";
+            var code = flowThroughHelpersTpl
+                .Replace("{projectName}", projectName)
+                .Replace("{modulePath}", modulePath); 
             File.WriteAllText(filePath, ReplaceLineEndings(code));
         }
         private static void RemoveAsyncFromInterfaceMethodNames(ref CompilationUnitSyntax root)
@@ -1386,9 +1154,10 @@ $@"
                 foreach (var operation in path.Value.Values)
                     if (operation.OperationId != null /* && endpointkeys.Contains(UpCaseFirstChar(operation.OperationId)) */)
                     {
-                        if (!map.ContainsKey(operation.OperationId))
-                            map[operation.OperationId] = new Dictionary<string, string>();
-                        var extList = map[operation.OperationId];
+                        var opId = operation.OperationId.Replace(".", "_").Replace("-", "_");
+                        if (!map.ContainsKey(opId))
+                            map[opId] = new Dictionary<string, string>();
+                        var extList = map[opId];
                         if (operation.ExtensionData != null)
                             foreach (var extension in operation.ExtensionData)
                                 extList.Add(extension.Key, extension.Value.ToString());
@@ -1688,7 +1457,7 @@ $@"
                 });
         }
 
-        private static void UpdateControllerMethodBodies(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, string projectName, string operationType)
+        private static void UpdateControllerMethodBodies(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, string projectName, string operationType, bool autoGenCall)
         {
             var methodExtensions = MethodExtensionsData(openApiDocument); // Dictionary<operationId, Dictionary<extensionKey, extensionValue>>   
             var operationDetails = GetOperationDetails(openApiDocument); // Dictionary<operationId, (httpMethod, path, returnType, hasBody)>
@@ -1712,9 +1481,10 @@ $@"
                             }
                             if (methodExtensions.TryGetValue(methodName, out var extensions))
                             {
-                                if (extensions.ContainsKey("x-lz-gencall"))
+                                if(autoGenCall || extensions.ContainsKey("x-lz-gencall"))
                                 {
-                                    var gencallValue = extensions["x-lz-gencall"];
+                                    var gencallValue = (extensions.ContainsKey("x-lz-gencall")) ? extensions["x-lz-gencall"] : "";
+
                                     // If the gencall starts with "throw", don't wrap with "return await"
                                     if (gencallValue.TrimStart().StartsWith("throw", StringComparison.OrdinalIgnoreCase))
                                     {
@@ -1722,14 +1492,16 @@ $@"
                                     }
                                     else
                                     {
-                                        switch(operationType)
+                                        switch (operationType)
                                         {
                                             case "default":
                                                 body = $"{indent}var callerInfo = await {projectName}Authorization.GetCallerInfoAsync(this.Request);";
                                                 body += $"\r\n{indent}return await {gencallValue};";
                                                 break;
                                             case "flowthrough":
-                                                body = GenerateFlowThroughMethodBody(methodName, originalMethod, operationDetails, projectName, indent);
+                                                var odata = extensions.ContainsKey("x-lz-odatapath") ? extensions["x-lz-odatapath"] : null;
+                                                body = $"{indent}var callerInfo = await {projectName}Authorization.GetCallerInfoAsync(this.Request);";
+                                                body += "\r\n" + GenerateFlowThroughMethodBody(methodName, originalMethod, operationDetails, projectName, indent, odata);
                                                 break;
                                             default:
                                                 throw new Exception($"Unknown OperationType: {operationType}");
@@ -1820,8 +1592,8 @@ $@"
 
                     // Check if operation has a request body
                     var hasBody = operation.RequestBody != null;
-
-                    details[operation.OperationId] = (httpMethod, path, returnType, hasBody, isCollection);
+                    var opId = operation.OperationId.Replace(".", "_").Replace("-", "_");
+                    details[opId] = (httpMethod, path, returnType, hasBody, isCollection);
                 }
             }
 
@@ -1896,7 +1668,8 @@ $@"
             MethodDeclarationSyntax method,
             Dictionary<string, (string httpMethod, string path, string returnType, bool hasBody, bool isCollection)> operationDetails,
             string projectName,
-            string indent)
+            string indent,
+            string odata)
         {
             if (!operationDetails.TryGetValue(methodName, out var details))
             {
@@ -1909,7 +1682,7 @@ $@"
             var (returnType, isCollection, hasReturnValue) = ExtractReturnTypeFromMethod(method);
 
             // Build the path with parameter substitution
-            var pathExpression = ConvertPathToInterpolatedString(path, method);
+            var pathExpression = ConvertPathToInterpolatedString((odata == null) ? path : odata, method);
 
             // Check if method has a 'body' parameter - if not, we can't pass it
             var hasBodyParameter = method.ParameterList.Parameters.Any(p => p.Identifier.Text == "body");
@@ -1923,16 +1696,16 @@ $@"
             {
                 if (isCollection)
                 {
-                    body.AppendLine($"{indent}return await FlowThroughGetCollectionAsync<{returnType}>({pathExpression});");
+                    body.AppendLine($"{indent}return await FlowThroughGetCollectionAsync<{returnType}>(callerInfo, {pathExpression});");
                 }
                 else if (hasReturnValue)
                 {
-                    body.AppendLine($"{indent}return await FlowThroughGetAsync<{returnType}>({pathExpression});");
+                    body.AppendLine($"{indent}return await FlowThroughGetAsync<{returnType}>(callerInfo, {pathExpression});");
                 }
                 else
                 {
                     // IActionResult return - use non-generic version
-                    body.AppendLine($"{indent}return await FlowThroughGetAsync({pathExpression});");
+                    body.AppendLine($"{indent}return await FlowThroughGetAsync(callerInfo, {pathExpression});");
                 }
             }
             else if (httpMethod.Equals("post", StringComparison.OrdinalIgnoreCase))
@@ -1941,22 +1714,22 @@ $@"
                 {
                     if (hasReturnValue)
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPostAsync<{returnType}, object>({pathExpression}, body);");
+                        body.AppendLine($"{indent}return await FlowThroughPostAsync<{returnType}, object>(callerInfo, {pathExpression}, body);");
                     }
                     else
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPostAsync({pathExpression}, body);");
+                        body.AppendLine($"{indent}return await FlowThroughPostAsync(callerInfo, {pathExpression}, body);");
                     }
                 }
                 else
                 {
                     if (hasReturnValue)
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPostAsync<{returnType}, object>({pathExpression}, new {{}});");
+                        body.AppendLine($"{indent}return await FlowThroughPostAsync<{returnType}, object>(callerInfo, {pathExpression}, new {{}});");
                     }
                     else
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPostAsync({pathExpression}, new {{}});");
+                        body.AppendLine($"{indent}return await FlowThroughPostAsync(callerInfo, {pathExpression}, new {{}});");
                     }
                 }
             }
@@ -1966,22 +1739,22 @@ $@"
                 {
                     if (hasReturnValue)
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>({pathExpression}, body);");
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>(callerInfo, {pathExpression}, body);");
                     }
                     else
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync({pathExpression}, body);");
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync(callerInfo, {pathExpression}, body);");
                     }
                 }
                 else
                 {
                     if (hasReturnValue)
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>({pathExpression}, new {{}});");
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>(callerInfo, {pathExpression}, new {{}});");
                     }
                     else
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync({pathExpression}, new {{}});");
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync(callerInfo, {pathExpression}, new {{}});");
                     }
                 }
             }
@@ -1989,11 +1762,11 @@ $@"
             {
                 if (hasReturnValue)
                 {
-                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync<{returnType}>({pathExpression});");
+                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync<{returnType}>(callerInfo, {pathExpression});");
                 }
                 else
                 {
-                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync({pathExpression});");
+                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync(callerInfo, {pathExpression});");
                 }
             }
             else if (httpMethod.Equals("patch", StringComparison.OrdinalIgnoreCase))
@@ -2003,22 +1776,22 @@ $@"
                 {
                     if (hasReturnValue)
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>({pathExpression}, body);");
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>(callerInfo, {pathExpression}, body);");
                     }
                     else
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync({pathExpression}, body);");
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync(callerInfo, {pathExpression}, body);");
                     }
                 }
                 else
                 {
                     if (hasReturnValue)
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>({pathExpression}, new {{}});");
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>(callerInfo, {pathExpression}, new {{}});");
                     }
                     else
                     {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync({pathExpression}, new {{}});");
+                        body.AppendLine($"{indent}return await FlowThroughPutAsync(callerInfo, {pathExpression}, new {{}});");
                     }
                 }
             }
