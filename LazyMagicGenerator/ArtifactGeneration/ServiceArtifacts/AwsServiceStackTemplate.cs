@@ -39,10 +39,12 @@ namespace LazyMagic
                 // Set the service name
                 await InfoAsync($"Generating {service.Key} {templateName}");
                 var systemTemplatePath = Template;
-                var tenantCloudFrontConfigFunctionSnippet = 
-                    File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, ConfigFunctionTemplate))
-                    .Replace("__TemplateSource__", ConfigFunctionTemplate);
-
+                if (!string.IsNullOrEmpty(ConfigFunctionTemplate))
+                {
+                    var tenantCloudFrontConfigFunctionSnippet =
+                        File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, ConfigFunctionTemplate))
+                        .Replace("__TemplateSource__", ConfigFunctionTemplate);
+                }
                 var templateBuilder = new StringBuilder()
                     .Append(File.ReadAllText(Path.Combine(solution.SolutionRootFolderPath, systemTemplatePath)))
                     .Replace("__ResourceGenerator__", this.GetType().Name)
