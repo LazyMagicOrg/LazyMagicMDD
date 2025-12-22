@@ -28,7 +28,7 @@ namespace LazyMagic
             get => ExportedProjectPath;
             set => ExportedProjectPath = value;
         }
-        public override string Template { get; set; } = "ProjectTemplates/Controller";
+        public override string Template { get; set; } = "Controller";
         public override string OutputFolder { get; set; } = "Modules";
 
         public string ExportedOpenApiSpec { get; set; } = "";
@@ -39,7 +39,7 @@ namespace LazyMagic
         public string FlowThroughDomain { get; set; } = "";
         public string FlowThroughPort { get; set; } = "";
         public bool AutoGenCall { get; set; } = false;   
-        public string FlowThroughHelpersTpl { get; set; } = "ProjectTemplates/Controller/FlowThroughHelpers.tpl";
+        public string FlowThroughHelpersTpl { get; set; } = "Controller/FlowThroughHelpers.tpl";
 
         public string ControllerLifetime { get; set; } = "Singleton";
         public bool GenerateClientInterface { get; set; } = true;
@@ -174,9 +174,9 @@ namespace LazyMagic
                 }
 
                 // Copy the template project to the target project. Removes *.g.* files.
-                var flowThroughHelpersTplPath = CombinePath(solution.SolutionRootFolderPath, FlowThroughHelpersTpl);
+                var flowThroughHelpersTplPath = CombinePath(solution.SolutionRootFolderPath, Path.Combine(ProjectTemplatesFolder, FlowThroughHelpersTpl));
                 var flowThroughHelpersTpl = File.ReadAllText(flowThroughHelpersTplPath);
-                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
+                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, TemplatePath);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
                 var csprojFileName = GetCsprojFile(sourceProjectDir);
                 var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md"};
@@ -189,6 +189,7 @@ namespace LazyMagic
                     overwrite: true);
 
                 GenerateCommonProjectFiles(sourceProjectDir, targetProjectDir);
+                RenameTemplateFiles(targetProjectDir);
 
                // Generate classes using NSwag
                // We only use the NSWAG generated code as a starting point. It is not 
@@ -358,7 +359,7 @@ public partial class {projectName}Controller : {projectName}ControllerBase {{}}
             Info($"Generating client interface project {clientProjectName}");
 
             // Copy BasicLib template to target directory
-            var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, "ProjectTemplates/BasicLib");
+            var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(ProjectTemplatesFolder, "BasicLib"));
             var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(clientOutputFolder, clientProjectName));
             var csprojFileName = GetCsprojFile(sourceProjectDir);
             var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md" };
@@ -369,6 +370,8 @@ public partial class {projectName}Controller : {projectName}ControllerBase {{}}
                 Path.Combine(sourceProjectDir, csprojFileName),
                 Path.Combine(targetProjectDir, clientProjectName + ".csproj"),
                 overwrite: true);
+            
+            RenameTemplateFiles(targetProjectDir);
 
             // Generate project references from schema artifacts (client-side DTOs only)
             var clientProjectReferences = new List<string>();

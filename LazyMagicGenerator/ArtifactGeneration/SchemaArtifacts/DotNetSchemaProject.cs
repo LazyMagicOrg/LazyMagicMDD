@@ -1,4 +1,4 @@
-﻿using NSwag.CodeGeneration.CSharp;
+using NSwag.CodeGeneration.CSharp;
 using System.Threading.Tasks;
 using System;
 using System.IO;
@@ -23,7 +23,7 @@ namespace LazyMagic
             set => ExportedProjectPath = value;
         }
         public override string NameSuffix { get; set; } = "";
-        public override string Template { get; set; } = "ProjectTemplates/Schema";
+        public override string Template { get; set; } = "Schema";
         public override string OutputFolder { get; set; } = "Schemas";
         public bool UseIItemInterface { get; set; } = true;
 
@@ -95,7 +95,7 @@ namespace LazyMagic
                 }
 
                 // Copy the template project to the target project. Removes *.g.* files.           
-                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
+                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, TemplatePath);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
                 var csprojFileName = GetCsprojFile(sourceProjectDir);
                 var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md"};
@@ -108,8 +108,9 @@ namespace LazyMagic
                     overwrite: true);
 
                 GenerateCommonProjectFiles(sourceProjectDir, targetProjectDir);
+                RenameTemplateFiles(targetProjectDir);
 
-                // Generate classeDeclarations using NSwag 
+                // Generate classeDeclarations using NSwag
                 var nswagSettings = new CSharpClientGeneratorSettings
                 {
                     ClassName = projectName,

@@ -12,7 +12,7 @@ namespace LazyMagic
     public class DotNetAppSyncEventsSDKProject : DotNetProjectBase
     {
         #region Properties
-        public override string Template { get; set; } = "ProjectTemplates/AppSyncEventsSDK";
+        public override string Template { get; set; } = "AppSyncEventsSDK";
         public override string OutputFolder { get; set; } = "ClientSDKs";
 
         public override string ProjectFilePath
@@ -48,7 +48,7 @@ namespace LazyMagic
                 PackageReferences.Add("Microsoft.Extensions.Logging.Abstractions");
 
                 // Copy the template project to the target project
-                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
+                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, TemplatePath);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
                 var csprojFileName = GetCsprojFile(sourceProjectDir);
                 var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md" };
@@ -61,6 +61,7 @@ namespace LazyMagic
                     overwrite: true);
 
                 GenerateCommonProjectFiles(sourceProjectDir, targetProjectDir);
+                RenameTemplateFiles(targetProjectDir);
 
                 // Generate AppSync Events client classes
                 GenerateAppSyncEventsClient(targetProjectDir, nameSpace, projectName);

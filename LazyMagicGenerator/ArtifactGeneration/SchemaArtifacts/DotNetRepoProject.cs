@@ -1,4 +1,4 @@
-﻿using NSwag.CodeGeneration.CSharp;
+using NSwag.CodeGeneration.CSharp;
 using System.Threading.Tasks;
 using System;   
 using System.IO;
@@ -27,7 +27,7 @@ namespace LazyMagic
             set => ExportedProjectPath = value;
         }
         public override string NameSuffix { get; set; } = "Repo";
-        public override string Template { get; set; } = "ProjectTemplates/Repo";
+        public override string Template { get; set; } = "Repo";
         public override string OutputFolder { get; set; } = "Schemas";
         public List<string> ExportedEntities { get; set; } = new List<string>();
         public string RepoLifetime { get; set; } = "Transient";
@@ -96,8 +96,8 @@ namespace LazyMagic
                 GlobalUsings.AddRange(dotnetSchemaProject.ExportedGlobalUsings);
                 ExportedEntities.AddRange(dotnetSchemaProject.ExportedEntities);
 
-                // Copy the _template project to the target project. Removes *.g.* files.
-                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
+                // Copy the template project to the target project. Removes *.g.* files.
+                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, TemplatePath);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
                 var csprojFileName = GetCsprojFile(sourceProjectDir);
                 var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md" };
@@ -110,8 +110,9 @@ namespace LazyMagic
                     overwrite: true);
 
                 GenerateCommonProjectFiles(sourceProjectDir, targetProjectDir);
+                RenameTemplateFiles(targetProjectDir);
 
-                Directory.CreateDirectory(Path.Combine(targetProjectDir, "Repos")); 
+                Directory.CreateDirectory(Path.Combine(targetProjectDir, "Repos"));
 
                 // Generate classes using NSwag 
                 var nswagSettings = new CSharpClientGeneratorSettings

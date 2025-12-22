@@ -20,7 +20,7 @@ namespace LazyMagic
     public class AspDotNetApiSDKProject : DotNetProjectBase
     {
         #region Properties
-        public override string Template { get; set; } = "ProjectTemplates/ClientSDK";
+        public override string Template { get; set; } = "ClientSDK";
         public override string OutputFolder { get; set; } = "ClientSDKs";
 
         public override string ProjectFilePath
@@ -84,7 +84,7 @@ namespace LazyMagic
                 ServiceRegistrations = ServiceRegistrations.Distinct().ToList();
 
                 // Copy the template project to the target project. Removes *.g.* files.
-                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
+                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, TemplatePath);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
                 var csprojFileName = GetCsprojFile(sourceProjectDir);
                 var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md" };
@@ -97,6 +97,7 @@ namespace LazyMagic
                     overwrite: true);
 
                 GenerateCommonProjectFiles(sourceProjectDir, targetProjectDir);
+                RenameTemplateFiles(targetProjectDir);
 
                 var moduleNames = new HashSet<string>(); // Collect unique module names
                 // Get all containers referenced by this API to discover modules

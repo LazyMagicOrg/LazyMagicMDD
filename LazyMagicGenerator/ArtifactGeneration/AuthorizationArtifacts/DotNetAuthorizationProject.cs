@@ -73,7 +73,7 @@ namespace LazyMagic
                 GeneratePackagesPropsFile(packagePropsPathList, packagePropsPath);
 
                 // GlobalUsing.g.cs file.
-                var globalUsingText = File.ReadAllText(Path.Combine(sourceProjectDir, "GlobalUsing.g.cs"));
+                var globalUsingText = File.ReadAllText(Path.Combine(sourceProjectDir, "GlobalUsing.t.cs"));
                 var globlaUsingPath = Path.Combine(targetProjectDir, "GlobalUsing.g.cs");
                 var usings = GlobalUsings ?? new List<string>();
                 GenerateGlobalUsingFile(usings, globalUsingText, globlaUsingPath);

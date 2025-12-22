@@ -42,8 +42,8 @@ namespace LazyMagic
             // GlobalUsing.g.cs file 
             GenerateGlobalUsingFile(
                 GlobalUsings,
-                File.ReadAllText(Path.Combine(sourceProjectDir, "GlobalUsing.g.cs")),
-                Path.Combine(targetProjectDir, "GlobalUsing.g.cs"));
+                File.ReadAllText(Path.Combine(sourceProjectDir, "GlobalUsing.t.cs")),
+                Path.Combine(targetProjectDir, "GlobalUsing.t.cs"));
 
             // User.props file if it does not exist. We create it to remind the user
             // they can use it to extend their project.

@@ -407,5 +407,36 @@ namespace LazyMagic
             }
             return sb.ToString();
         }
+        
+        /// <summary>
+        /// Renames all *.t.cs files in the target directory (and subdirectories) to *.g.cs.
+        /// This allows template files to be stored with .t.cs extension and renamed to .g.cs
+        /// after copying to the target project.
+        /// </summary>
+        /// <param name="targetProjectDir">The directory to search for .t.cs files</param>
+        public static void RenameTemplateFiles(string targetProjectDir)
+        {
+            if (string.IsNullOrEmpty(targetProjectDir))
+                throw new ArgumentNullException(nameof(targetProjectDir));
+                
+            if (!Directory.Exists(targetProjectDir))
+                return;
+                
+            // Find all *.t.cs files recursively
+            var templateFiles = Directory.GetFiles(targetProjectDir, "*.t.cs", SearchOption.AllDirectories);
+            
+            foreach (var templateFile in templateFiles)
+            {
+                // Replace .t.cs with .g.cs
+                var generatedFile = templateFile.Substring(0, templateFile.Length - 5) + ".g.cs";
+                
+                // Delete target if it exists (to handle overwrite)
+                if (File.Exists(generatedFile))
+                    File.Delete(generatedFile);
+                    
+                // Rename the file
+                File.Move(templateFile, generatedFile);
+            }
+        }
     }
 }

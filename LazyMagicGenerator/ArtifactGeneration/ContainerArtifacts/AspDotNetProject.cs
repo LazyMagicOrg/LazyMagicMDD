@@ -13,7 +13,7 @@ namespace LazyMagic
     public class AspDotNetProject : DotNetProjectBase
     {
         #region Properties
-        public override string Template { get; set; } = "ProjectTemplates/AspDotNetHost";
+        public override string Template { get; set; } = "AspDotNetHost";
         public string ExportedApiPrefix { get; set; } = "";
         public string ExportedOpenApiSpec { get; set; } = "";
         public string ExportedImageUri { get; set; } = "";
@@ -47,10 +47,10 @@ namespace LazyMagic
                 // Package references are now defined directly in the AppRunner.csproj template
 
                 // Copy the template project to the target project. Removes *.g.* files.
-                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
+                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, TemplatePath);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
                 var csprojFileName = GetCsprojFile(sourceProjectDir);
-                var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md", "ConfigureSvc.g.cs" };
+                var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md", "ConfigureSvc.t.cs" };
                 CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
 
                 // Create/Update the project file
@@ -60,6 +60,7 @@ namespace LazyMagic
                     overwrite: true);
 
                 GenerateCommonProjectFiles(sourceProjectDir, targetProjectDir);
+                RenameTemplateFiles(targetProjectDir);
 
                 var controllerProjects = GetControllerProjects(directive, solution.Directives);
 

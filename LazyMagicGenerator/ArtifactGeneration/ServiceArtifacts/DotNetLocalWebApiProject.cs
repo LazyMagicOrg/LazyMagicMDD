@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using System.IO;
 using System.Collections.Generic;
@@ -32,7 +32,7 @@ namespace LazyMagic
     {
 
         #region Properties
-        public override string Template { get; set; } = "ProjectTemplates/WebApi";
+        public override string Template { get; set; } = "WebApi";
         public override string OutputFolder { get; set; } = "";
         public override string ProjectFilePath
         {
@@ -95,10 +95,10 @@ namespace LazyMagic
                 ServiceRegistrations.AddRange(GetExportedServiceRegistrations(controllerArtifactBases));
 
                 // Copy the template project to the target project. Removes *.g.* files.
-                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, Template);
+                var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, TemplatePath);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(outputFolder, projectName));
                 var csprojFileName = GetCsprojFile(sourceProjectDir);
-                var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md", "ConfigureSvcs.g.cs" };
+                var filesToExclude = new List<string> { csprojFileName, "User.props", "SRCREADME.md", "ConfigureSvcs.t.cs" };
                 CopyProject(sourceProjectDir, targetProjectDir, filesToExclude);
 
                 // Create/Update the Repo.csproj file.
@@ -108,6 +108,7 @@ namespace LazyMagic
                     overwrite: true);
 
                 GenerateCommonProjectFiles(sourceProjectDir, targetProjectDir);
+                RenameTemplateFiles(targetProjectDir);
 
                 GenerateConfigureSvcsFile(projectName, nameSpace, Path.Combine(solution.SolutionRootFolderPath, outputFolder, projectName, $"ConfigureSvcs") + ".g.cs");
 
