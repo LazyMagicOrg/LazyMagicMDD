@@ -118,10 +118,16 @@ class Program
 
             // 12. Rename conflicting schema names (e.g., StreamContent -> ODataStreamContent)
             Console.WriteLine("Renaming conflicting schema names...");
-            var finalYaml = RenameConflictingSchemas(simplifiedYaml2);
+            var renamedYaml = RenameConflictingSchemas(simplifiedYaml2);
             Console.WriteLine($"  Renamed conflicting schemas");
 
-            // 13. Write to file
+            // 13. Convert number types with int32/int64 format to integer type
+            // This fixes code generators that interpret "type: number" as double even with format: int32
+            Console.WriteLine("Converting number types to integer where appropriate...");
+            var (finalYaml, intConvertedCount) = ConvertNumberToInteger(renamedYaml);
+            Console.WriteLine($"  Converted {intConvertedCount} number types to integer");
+
+            // 14. Write to file
             await File.WriteAllTextAsync(outputPath, finalYaml);
             Console.WriteLine($"  Written to: {outputPath}");
 
@@ -1193,6 +1199,84 @@ class Program
         }
         
         return result;
+    }
+
+    /// <summary>
+    /// Converts "type: number" with "format: int32" or "format: int64" to "type: integer".
+    /// 
+    /// Many code generators (including NSwag) interpret "type: number" as a floating-point type
+    /// (double in C#), even when format: int32 is specified. This causes issues when the
+    /// generated code serializes integers as "0.0" instead of "0", which OData APIs reject.
+    /// 
+    /// The OpenAPI spec actually distinguishes between "number" (floating-point) and "integer",
+    /// so this conversion makes the spec more accurate and fixes code generation issues.
+    /// </summary>
+    /// <returns>Tuple of (processed YAML, count of conversions)</returns>
+    static (string yaml, int count) ConvertNumberToInteger(string yaml)
+    {
+        using var reader = new StringReader(yaml);
+        var yamlStream = new YamlStream();
+        yamlStream.Load(reader);
+        
+        if (yamlStream.Documents.Count == 0)
+            return (yaml, 0);
+        
+        var root = yamlStream.Documents[0].RootNode;
+        
+        int convertedCount = 0;
+        ConvertNumberToIntegerInNode(root, ref convertedCount);
+        
+        // Serialize the modified document
+        using var writer = new StringWriter();
+        yamlStream.Save(writer, assignAnchors: false);
+        var result = writer.ToString();
+        
+        // Clean up the YAML output (remove document markers if present)
+        result = result.Replace("...\n", "").TrimEnd();
+        if (result.StartsWith("---\n"))
+            result = result.Substring(4);
+        
+        return (result, convertedCount);
+    }
+
+    /// <summary>
+    /// Recursively finds nodes with "type: number" and "format: int32/int64" and converts them to "type: integer".
+    /// </summary>
+    static void ConvertNumberToIntegerInNode(YamlNode node, ref int count)
+    {
+        if (node is YamlMappingNode mapping)
+        {
+            var typeKey = new YamlScalarNode("type");
+            var formatKey = new YamlScalarNode("format");
+            
+            // Check if this node has both type: number and format: int32/int64
+            if (mapping.Children.TryGetValue(typeKey, out var typeNode) &&
+                mapping.Children.TryGetValue(formatKey, out var formatNode))
+            {
+                var typeValue = (typeNode as YamlScalarNode)?.Value;
+                var formatValue = (formatNode as YamlScalarNode)?.Value;
+                
+                if (typeValue == "number" && (formatValue == "int32" || formatValue == "int64"))
+                {
+                    // Replace "number" with "integer"
+                    mapping.Children[typeKey] = new YamlScalarNode("integer");
+                    count++;
+                }
+            }
+            
+            // Recurse into all children
+            foreach (var child in mapping.Children.Values.ToList())
+            {
+                ConvertNumberToIntegerInNode(child, ref count);
+            }
+        }
+        else if (node is YamlSequenceNode sequence)
+        {
+            foreach (var child in sequence.Children)
+            {
+                ConvertNumberToIntegerInNode(child, ref count);
+            }
+        }
     }
 
 }

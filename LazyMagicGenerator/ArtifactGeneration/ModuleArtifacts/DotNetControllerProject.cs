@@ -163,13 +163,14 @@ namespace LazyMagic
                 GlobalUsings = GlobalUsings.Distinct().ToList();
                 interfaces = interfaces.Distinct().ToList();
 
-                // Add Polly global usings for flowthrough operations
+                // Add Polly and Integrations global usings for flowthrough operations
                 if (OperationType == "flowthrough")
                 {
                     GlobalUsings.Add("Polly");
                     GlobalUsings.Add("Polly.Extensions.Http");
                     GlobalUsings.Add("Microsoft.Extensions.Http");
                     GlobalUsings.Add("System.Net.Http.Json");
+                    GlobalUsings.Add("Integrations");
                     PackageReferences.Add("Microsoft.Extensions.Http.Polly");
                 }
 
@@ -1988,25 +1989,18 @@ $@"
             {
                 // NOTE: Flowthrough operations require the Microsoft.Extensions.Http.Polly package.
                 // This is added to Packages.g.props automatically.
-                // The global usings for Polly are added to GlobalUsing.g.cs automatically.
+                // The global usings for Polly and Integrations are added to GlobalUsing.g.cs automatically.
                 additionalUsings = "";
                 httpClientRegistration = $@"
             // Register HttpClient for flow-through operations with Polly retry and circuit breaker policies
-            services.AddHttpClient(""{projectName}FlowThrough"", client =>
+            // Base URL is configured via IntegrationRegistry from systemconfig.yaml Integrations:Services section
+            services.AddHttpClient(""{projectName}FlowThrough"", (sp, client) =>
             {{
-                var baseUrl = Environment.GetEnvironmentVariable(""LZ_FLOWTHROUGH_{projectName.ToUpper()}_URL"") 
+                var registry = sp.GetRequiredService<IntegrationRegistry>();
+                var baseUrl = registry.GetUrlForModule(""{projectName}"") 
                     ?? ""http://localhost:8080/"";
                 client.BaseAddress = new Uri(baseUrl);
-                
-                var timeout = Environment.GetEnvironmentVariable(""LZ_FLOWTHROUGH_{projectName.ToUpper()}_TIMEOUT"");
-                if (int.TryParse(timeout, out var timeoutSeconds))
-                {{
-                    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-                }}
-                else
-                {{
-                    client.Timeout = TimeSpan.FromSeconds(30);
-                }}
+                client.Timeout = TimeSpan.FromSeconds(30);
             }})
             .AddPolicyHandler(GetRetryPolicy())
             .AddPolicyHandler(GetCircuitBreakerPolicy());
@@ -2061,7 +2055,7 @@ $@"
             CustomConfigurations(services);
             return services;            
         }}
-        static partial void CustomConfigurations(IServiceCollection sdervices);{pollyMethods}
+        static partial void CustomConfigurations(IServiceCollection services);{pollyMethods}
     }}
 }}
 ";
