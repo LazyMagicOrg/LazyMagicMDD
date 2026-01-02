@@ -1262,6 +1262,60 @@ $@"
         }
 
         /// <summary>
+        /// Extracts query parameters from the method signature.
+        /// Query parameters are identified by having a [FromQuery] attribute.
+        /// Returns tuples of (queryStringName, csharpParamName) where queryStringName is from
+        /// [FromQuery(Name = "...")] and csharpParamName is the C# parameter identifier.
+        /// </summary>
+        private static List<(string queryStringName, string csharpParamName)> GetQueryParametersFromMethod(MethodDeclarationSyntax method)
+        {
+            var queryParams = new List<(string queryStringName, string csharpParamName)>();
+            
+            foreach (var param in method.ParameterList.Parameters)
+            {
+                // Find the [FromQuery] attribute
+                var fromQueryAttr = param.AttributeLists
+                    .SelectMany(al => al.Attributes)
+                    .FirstOrDefault(a => a.Name.ToString().Contains("FromQuery"));
+                    
+                if (fromQueryAttr != null)
+                {
+                    var csharpParamName = param.Identifier.Text;
+                    var queryStringName = csharpParamName; // Default to C# param name
+                    
+                    // Try to extract the Name property from [FromQuery(Name = "...")]
+                    if (fromQueryAttr.ArgumentList != null)
+                    {
+                        var nameArg = fromQueryAttr.ArgumentList.Arguments
+                            .FirstOrDefault(a => a.NameEquals?.Name.Identifier.Text == "Name");
+                        if (nameArg != null && nameArg.Expression is LiteralExpressionSyntax literal)
+                        {
+                            queryStringName = literal.Token.ValueText;
+                        }
+                    }
+                    
+                    queryParams.Add((queryStringName, csharpParamName));
+                }
+            }
+            
+            return queryParams;
+        }
+
+        /// <summary>
+        /// Builds a dictionary expression containing query parameters with their proper query string names.
+        /// Returns null if there are no query parameters.
+        /// Example output: new Dictionary&lt;string, object&gt; { ["$top"] = top, ["$skip"] = skip }
+        /// </summary>
+        private static string BuildQueryParamsObject(List<(string queryStringName, string csharpParamName)> queryParams)
+        {
+            if (queryParams == null || queryParams.Count == 0)
+                return null;
+
+            var entries = queryParams.Select(p => $"[\"{p.queryStringName}\"] = {p.csharpParamName}");
+            return $"new Dictionary<string, object> {{ {string.Join(", ", entries)} }}";
+        }
+
+        /// <summary>
         /// Transforms methods that have x-lz-fromform to use a single [FromForm] parameter
         /// instead of individual form field parameters.
         /// </summary>
@@ -1688,6 +1742,10 @@ $@"
             // Build the path with parameter substitution
             var pathExpression = ConvertPathToInterpolatedString((odata == null) ? path : odata, method);
 
+            // Get query parameters from method signature (parameters with [FromQuery] attribute)
+            var queryParams = GetQueryParametersFromMethod(method);
+            var queryParamsObject = BuildQueryParamsObject(queryParams);
+
             // Check if method has a 'body' parameter - if not, we can't pass it
             var hasBodyParameter = method.ParameterList.Parameters.Any(p => p.Identifier.Text == "body");
             
@@ -1696,107 +1754,77 @@ $@"
 
             var body = new System.Text.StringBuilder();
 
+            // Generate query params variable if there are any
+            if (queryParamsObject != null)
+            {
+                body.AppendLine($"{indent}var queryParams = {queryParamsObject};");
+            }
+
+            // Build the optional query params argument
+            var queryParamsArg = queryParamsObject != null ? ", queryParams" : "";
+
             if (httpMethod.Equals("get", StringComparison.OrdinalIgnoreCase))
             {
                 if (isCollection)
                 {
-                    body.AppendLine($"{indent}return await FlowThroughGetCollectionAsync<{returnType}>(callerInfo, {pathExpression});");
+                    body.AppendLine($"{indent}return await FlowThroughGetCollectionAsync<{returnType}>(callerInfo, {pathExpression}{queryParamsArg});");
                 }
                 else if (hasReturnValue)
                 {
-                    body.AppendLine($"{indent}return await FlowThroughGetAsync<{returnType}>(callerInfo, {pathExpression});");
+                    body.AppendLine($"{indent}return await FlowThroughGetAsync<{returnType}>(callerInfo, {pathExpression}{queryParamsArg});");
                 }
                 else
                 {
                     // IActionResult return - use non-generic version
-                    body.AppendLine($"{indent}return await FlowThroughGetAsync(callerInfo, {pathExpression});");
+                    body.AppendLine($"{indent}return await FlowThroughGetAsync(callerInfo, {pathExpression}{queryParamsArg});");
                 }
             }
             else if (httpMethod.Equals("post", StringComparison.OrdinalIgnoreCase))
             {
-                if (shouldPassBody)
+                var bodyArg = shouldPassBody ? "body" : "null";
+                if (hasReturnValue)
                 {
-                    if (hasReturnValue)
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPostAsync<{returnType}, object>(callerInfo, {pathExpression}, body);");
-                    }
-                    else
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPostAsync(callerInfo, {pathExpression}, body);");
-                    }
+                    body.AppendLine($"{indent}return await FlowThroughPostAsync<{returnType}>(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
                 }
                 else
                 {
-                    if (hasReturnValue)
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPostAsync<{returnType}, object>(callerInfo, {pathExpression}, new {{}});");
-                    }
-                    else
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPostAsync(callerInfo, {pathExpression}, new {{}});");
-                    }
+                    body.AppendLine($"{indent}return await FlowThroughPostAsync(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
                 }
             }
             else if (httpMethod.Equals("put", StringComparison.OrdinalIgnoreCase))
             {
-                if (shouldPassBody)
+                var bodyArg = shouldPassBody ? "body" : "null";
+                if (hasReturnValue)
                 {
-                    if (hasReturnValue)
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>(callerInfo, {pathExpression}, body);");
-                    }
-                    else
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync(callerInfo, {pathExpression}, body);");
-                    }
+                    body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}>(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
                 }
                 else
                 {
-                    if (hasReturnValue)
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>(callerInfo, {pathExpression}, new {{}});");
-                    }
-                    else
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync(callerInfo, {pathExpression}, new {{}});");
-                    }
+                    body.AppendLine($"{indent}return await FlowThroughPutAsync(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
                 }
             }
             else if (httpMethod.Equals("delete", StringComparison.OrdinalIgnoreCase))
             {
                 if (hasReturnValue)
                 {
-                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync<{returnType}>(callerInfo, {pathExpression});");
+                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync<{returnType}>(callerInfo, {pathExpression}{queryParamsArg});");
                 }
                 else
                 {
-                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync(callerInfo, {pathExpression});");
+                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync(callerInfo, {pathExpression}{queryParamsArg});");
                 }
             }
             else if (httpMethod.Equals("patch", StringComparison.OrdinalIgnoreCase))
             {
                 // PATCH uses same pattern as PUT
-                if (shouldPassBody)
+                var bodyArg = shouldPassBody ? "body" : "null";
+                if (hasReturnValue)
                 {
-                    if (hasReturnValue)
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>(callerInfo, {pathExpression}, body);");
-                    }
-                    else
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync(callerInfo, {pathExpression}, body);");
-                    }
+                    body.AppendLine($"{indent}return await FlowThroughPatchAsync<{returnType}>(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
                 }
                 else
                 {
-                    if (hasReturnValue)
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}, object>(callerInfo, {pathExpression}, new {{}});");
-                    }
-                    else
-                    {
-                        body.AppendLine($"{indent}return await FlowThroughPutAsync(callerInfo, {pathExpression}, new {{}});");
-                    }
+                    body.AppendLine($"{indent}return await FlowThroughPatchAsync(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
                 }
             }
             else
@@ -1845,6 +1873,8 @@ $@"
         /// Converts an OpenAPI path template to a C# interpolated string expression.
         /// E.g., "/api/orders/{id}" becomes $"/api/orders/{id}"
         /// Handles NSwag's parameter renaming (e.g., id -> idPath when there's also idQuery)
+        /// Also converts OData paths from slash format to parentheses format:
+        /// E.g., "/odata/v1/Products/{id}" becomes "/odata/v1/Products({id})"
         /// </summary>
         private static string ConvertPathToInterpolatedString(string path, MethodDeclarationSyntax method)
         {
@@ -1859,9 +1889,14 @@ $@"
                 return $"\"{path}\"";
             }
 
+            // Convert OData paths from slash format to parentheses format
+            // Pattern: /EntityName/{param} -> /EntityName({param})
+            // This handles paths like /odata/v1/Products/{Id} -> /odata/v1/Products({Id})
+            // and nested paths like /Products/{Id}/SubEntity/{Id1} -> /Products({Id})/SubEntity({Id1})
+            var result = ConvertODataPathToParenthesesFormat(path);
+
             // Extract path parameter names from the template (e.g., {id}, {orderId})
-            var pathParamMatches = Regex.Matches(path, @"\{([^}]+)\}");
-            var result = path;
+            var pathParamMatches = Regex.Matches(result, @"\{([^}]+)\}");
             
             foreach (Match match in pathParamMatches)
             {
@@ -1890,6 +1925,33 @@ $@"
             }
 
             return $"$\"{result}\"";
+        }
+
+        /// <summary>
+        /// Converts OData paths from slash format to parentheses format.
+        /// OData standard uses parentheses for entity keys: /Products(1) not /Products/1
+        /// This method converts paths like:
+        ///   /odata/v1/Products/{Id} -> /odata/v1/Products({Id})
+        ///   /odata/v1/Products/{Id}/AppliedDiscounts/{Id1} -> /odata/v1/Products({Id})/AppliedDiscounts({Id1})
+        /// </summary>
+        private static string ConvertODataPathToParenthesesFormat(string path)
+        {
+            // Only process OData paths (containing /odata/)
+            if (path.IndexOf("/odata/", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return path;
+            }
+
+            // Pattern: Match /EntityName/{param} and convert to /EntityName({param})
+            // This regex matches a path segment followed by /{parameter}
+            // where the path segment is a word (entity name) and the parameter is in curly braces
+            var result = Regex.Replace(
+                path,
+                @"/([A-Za-z][A-Za-z0-9]*)/\{([^}]+)\}",
+                "/$1({$2})",
+                RegexOptions.None);
+
+            return result;
         }
         private static string FixNswagSyntax(string code)
         {
