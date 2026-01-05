@@ -156,6 +156,8 @@ class Program
 
     /// <summary>
     /// Adds x-lz-odatapath extension to all operations, preserving the original OData path.
+    /// Converts REST-style key segments back to OData parenthesis syntax.
+    /// E.g., /odata/v1/Products/{key} -> /odata/v1/Products({key})
     /// This allows downstream tools to know the original OData path for flow-through operations.
     /// </summary>
     /// <returns>Number of operations that received the extension</returns>
@@ -170,16 +172,62 @@ class Program
             
             if (pathItem?.Operations == null) continue;
             
+            // Convert REST-style path to OData path
+            var odataPath = ConvertRestPathToODataPath(path);
+            
             foreach (var operation in pathItem.Operations.Values)
             {
                 if (operation == null) continue;
                 operation.Extensions ??= new Dictionary<string, IOpenApiExtension>();
-                operation.Extensions["x-lz-odatapath"] = new JsonNodeExtension(JsonValue.Create(path));
+                operation.Extensions["x-lz-odatapath"] = new JsonNodeExtension(JsonValue.Create(odataPath));
                 count++;
             }
         }
         
         return count;
+    }
+
+    /// <summary>
+    /// Converts REST-style key segments to OData parenthesis syntax.
+    /// 
+    /// Examples:
+    ///   /odata/v1/Products/{key} -> /odata/v1/Products({key})
+    ///   /odata/v1/Orders/{key}/Items/{itemKey} -> /odata/v1/Orders({key})/Items({itemKey})
+    ///   /odata/v1/Products -> /odata/v1/Products (unchanged, no key segment)
+    ///   /odata/v1/Products/{key}/Default.DoSomething -> /odata/v1/Products({key})/Default.DoSomething
+    /// </summary>
+    static string ConvertRestPathToODataPath(string path)
+    {
+        // Split path into segments
+        var segments = path.Split('/');
+        var result = new List<string>();
+        
+        for (int i = 0; i < segments.Length; i++)
+        {
+            var segment = segments[i];
+            
+            // Check if this segment is a path parameter (starts with { and ends with })
+            if (segment.StartsWith("{") && segment.EndsWith("}"))
+            {
+                // This is a key parameter - attach it to the previous segment with parentheses
+                if (result.Count > 0)
+                {
+                    var lastIndex = result.Count - 1;
+                    result[lastIndex] = result[lastIndex] + "(" + segment + ")";
+                }
+                else
+                {
+                    // Edge case: path starts with parameter (shouldn't happen in OData)
+                    result.Add(segment);
+                }
+            }
+            else
+            {
+                result.Add(segment);
+            }
+        }
+        
+        return string.Join("/", result);
     }
 
     /// <summary>

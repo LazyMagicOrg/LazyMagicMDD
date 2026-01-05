@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ODataToOpenApi": {
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\Users\\TimothyMay\\repos\\_Dev\\Monro\\Service\\smart-store-odata.xml\" \"C:\\Users\\TimothyMay\\repos\\_Dev\\Monro\\Service\\openapi.shop.yaml\""
+    }
+  }
+}
