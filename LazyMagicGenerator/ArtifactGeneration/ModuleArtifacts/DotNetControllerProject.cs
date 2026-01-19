@@ -1553,12 +1553,12 @@ $@"
                                         switch (operationType)
                                         {
                                             case "default":
-                                                body = $"{indent}var callerInfo = await {projectName}Authorization.GetCallerInfoAsync(this.Request);";
+                                                body = GenerateCallerInfoWithTryCatch(projectName, indent);
                                                 body += $"\r\n{indent}return await {gencallValue};";
                                                 break;
                                             case "flowthrough":
                                                 var odata = extensions.ContainsKey("x-lz-odatapath") ? extensions["x-lz-odatapath"] : null;
-                                                body = $"{indent}var callerInfo = await {projectName}Authorization.GetCallerInfoAsync(this.Request);";
+                                                body = GenerateCallerInfoWithTryCatch(projectName, indent);
                                                 body += "\r\n" + GenerateFlowThroughMethodBody(methodName, originalMethod, operationDetails, projectName, indent, odata);
                                                 break;
                                             default:
@@ -1716,6 +1716,25 @@ $@"
                 default:
                     return "object";
             }
+        }
+
+        /// <summary>
+        /// Generates the code to call GetCallerInfoAsync wrapped in a try-catch block
+        /// that converts AuthorizationException to appropriate HTTP status codes.
+        /// </summary>
+        private static string GenerateCallerInfoWithTryCatch(string projectName, string indent)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"{indent}ICallerInfo callerInfo;");
+            sb.AppendLine($"{indent}try");
+            sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    callerInfo = await {projectName}Authorization.GetCallerInfoAsync(this.Request);");
+            sb.AppendLine($"{indent}}}");
+            sb.AppendLine($"{indent}catch (AuthorizationException ex)");
+            sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    return StatusCode(ex.StatusCode, new {{ error = ex.ErrorCode, message = ex.Message }});");
+            sb.Append($"{indent}}}");
+            return sb.ToString();
         }
 
         /// <summary>
