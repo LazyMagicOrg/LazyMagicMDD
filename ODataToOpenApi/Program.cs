@@ -264,16 +264,26 @@ class Program
                 
                 // Convert to REST-style path
                 var newPath = ConvertODataFunctionPath(basePath, functionName, paramsStr);
-                
-                // Add x-lz-odatapath extension to each operation
+
+                // Add x-lz-odatapath extension and update parameter locations
                 if (pathItem.Operations != null)
                 {
                     foreach (var operation in pathItem.Operations.Values)
                     {
                         operation.Extensions["x-lz-odatapath"] = new JsonNodeExtension(JsonValue.Create(originalPath));
+
+                        // Update parameters that are now in the path template
+                        foreach (var param in operation.Parameters)
+                        {
+                            if (newPath.Contains($"{{{param.Name}}}") && param is OpenApiParameter concreteParam)
+                            {
+                                concreteParam.In = ParameterLocation.Path;
+                                concreteParam.Required = true;  // Path parameters are always required
+                            }
+                        }
                     }
                 }
-                
+
                 pathsToRemove.Add(originalPath);
                 pathsToAdd[newPath] = pathItem;
             }

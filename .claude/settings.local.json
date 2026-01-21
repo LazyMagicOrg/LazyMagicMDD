@@ -5,7 +5,10 @@
       "Bash(dotnet test:*)",
       "Read(//mnt/c/Users/TimothyMay/repos/_Dev/**)",
       "Read(//mnt/c/Users/TimothyMay/repos/**)",
-      "Bash(dotnet build:*)"
+      "Bash(dotnet build:*)",
+      "Bash(grep:*)",
+      "WebSearch",
+      "Bash(dotnet run:*)"
     ],
     "deny": []
   }
