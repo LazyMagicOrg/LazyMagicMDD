@@ -914,15 +914,12 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
         /// </summary>
         private static void GenerateFlowThroughHelpersFile(string projectName, string filePath, string flowThroughHelpersTpl)
         {
-            // The module path is the project name without "Module" suffix if present
-            var modulePath = projectName.EndsWith("Module") 
-                ? projectName.Substring(0, projectName.Length - "Module".Length) 
-                : projectName;
-            modulePath = modulePath.Replace(".", "").Replace("-", "");
-            
+            // The module path should match the OpenAPI path prefix which uses the full project name
+            var modulePath = projectName.Replace(".", "").Replace("-", "");
+
             var code = flowThroughHelpersTpl
                 .Replace("{projectName}", projectName)
-                .Replace("{modulePath}", modulePath); 
+                .Replace("{modulePath}", modulePath);
             File.WriteAllText(filePath, ReplaceLineEndings(code));
         }
         private static void RemoveAsyncFromInterfaceMethodNames(ref CompilationUnitSyntax root)
@@ -1897,13 +1894,36 @@ $@"
         /// </summary>
         private static string ConvertPathToInterpolatedString(string path, MethodDeclarationSyntax method)
         {
-            // Get parameter names from method signature for case-sensitive matching
-            var paramNames = method.ParameterList.Parameters
-                .Select(p => p.Identifier.Text)
+            // Get parameter names and types from method signature for case-sensitive matching
+            var parameters = method.ParameterList.Parameters
+                .Select(p => new {
+                    Name = p.Identifier.Text,
+                    Type = p.Type?.ToString() ?? "object"
+                })
                 .ToList();
+            var paramNames = parameters.Select(p => p.Name).ToList();
+
+            // Helper function to check if a parameter is boolean
+            bool IsBooleanParam(string paramName)
+            {
+                var param = parameters.FirstOrDefault(p =>
+                    p.Name.Equals(paramName, StringComparison.OrdinalIgnoreCase));
+                return param != null && (param.Type == "bool" || param.Type == "bool?" || param.Type == "Boolean" || param.Type == "Boolean?");
+            }
+
+            // Helper function to get the interpolation expression for a parameter
+            // Boolean parameters need .ToString().ToLowerInvariant() for OData compatibility
+            string GetInterpolationExpr(string paramName)
+            {
+                if (IsBooleanParam(paramName))
+                {
+                    return $"{{{paramName}.ToString().ToLowerInvariant()}}";
+                }
+                return $"{{{paramName}}}";
+            }
 
             // Check if path contains any parameters
-            if (!path.Contains("{"))
+            if (!path.Contains("{") && !path.Contains("@"))
             {
                 return $"\"{path}\"";
             }
@@ -1916,30 +1936,49 @@ $@"
 
             // Extract path parameter names from the template (e.g., {id}, {orderId})
             var pathParamMatches = Regex.Matches(result, @"\{([^}]+)\}");
-            
+
             foreach (Match match in pathParamMatches)
             {
                 var pathParamName = match.Groups[1].Value;
-                
+
                 // Look for exact match first
-                var exactMatch = paramNames.FirstOrDefault(p => 
+                var exactMatch = paramNames.FirstOrDefault(p =>
                     p.Equals(pathParamName, StringComparison.OrdinalIgnoreCase));
-                
+
                 if (exactMatch != null)
                 {
-                    // Found exact match - use it
-                    result = Regex.Replace(result, $@"\{{{pathParamName}\}}", $"{{{exactMatch}}}", RegexOptions.IgnoreCase);
+                    // Found exact match - use it with proper formatting for type
+                    result = Regex.Replace(result, $@"\{{{pathParamName}\}}", GetInterpolationExpr(exactMatch), RegexOptions.IgnoreCase);
                 }
                 else
                 {
                     // Look for renamed parameter (NSwag adds "Path" suffix when there's a conflict)
-                    var pathSuffixMatch = paramNames.FirstOrDefault(p => 
+                    var pathSuffixMatch = paramNames.FirstOrDefault(p =>
                         p.Equals(pathParamName + "Path", StringComparison.OrdinalIgnoreCase));
-                    
+
                     if (pathSuffixMatch != null)
                     {
-                        result = Regex.Replace(result, $@"\{{{pathParamName}\}}", $"{{{pathSuffixMatch}}}", RegexOptions.IgnoreCase);
+                        result = Regex.Replace(result, $@"\{{{pathParamName}\}}", GetInterpolationExpr(pathSuffixMatch), RegexOptions.IgnoreCase);
                     }
+                }
+            }
+
+            // Handle OData parameter aliases: @paramName -> {paramName}
+            // OData functions use @ prefix for parameter aliases, e.g., GetAllPaymentMethods(active={active},storeId=@storeId)
+            // We need to convert @paramName to {paramName} so C# string interpolation can substitute the value
+            var aliasMatches = Regex.Matches(result, @"@(\w+)");
+            foreach (Match match in aliasMatches)
+            {
+                var aliasName = match.Groups[1].Value;
+
+                // Look for matching parameter in method signature (case-insensitive)
+                var paramMatch = paramNames.FirstOrDefault(p =>
+                    p.Equals(aliasName, StringComparison.OrdinalIgnoreCase));
+
+                if (paramMatch != null)
+                {
+                    // Replace @aliasName with proper interpolation expression for the parameter type
+                    result = Regex.Replace(result, $@"@{aliasName}\b", GetInterpolationExpr(paramMatch), RegexOptions.IgnoreCase);
                 }
             }
 
