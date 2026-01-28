@@ -137,6 +137,7 @@ namespace LazyMagic
                     HttpClientType = "HttpClient",
                     GenerateClientInterfaces = true,
                     GenerateDtoTypes = false,
+                    WrapResponses = false, // Disable FileResponse wrapper class generation for binary responses
                     CSharpGeneratorSettings =
                     {
                         Namespace = nameSpace,
@@ -166,8 +167,11 @@ namespace LazyMagic
             // Generate the client SDK
             var root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
             // Preserve ApiException and the main client class
-            // FileParameter is now defined in the client interface project
+            // FileParameter and FileResponse are defined in the client interface project
             root = RemoveGeneratedSchemaClasses(root, new List<string> { "ApiException", projectName });
+
+            // Remove the NSwag-generated FileResponse - we use the one from ShopModuleClientInterface
+            root = RemoveClass(root, "FileResponse");
 
             // Remove the NSWAG-generated interface (we'll create our own)
             RemoveInterface(ref root);
@@ -180,7 +184,7 @@ namespace LazyMagic
 
             // Get the code as string
             var outputCode = root.ToFullString();
-            
+
             // Add using statements for module namespaces at the top of the file
             // This is needed for FileParameter and other types defined in module client interfaces
             if (moduleNames != null && moduleNames.Any())

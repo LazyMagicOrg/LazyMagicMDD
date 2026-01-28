@@ -121,13 +121,18 @@ class Program
             var renamedYaml = RenameConflictingSchemas(simplifiedYaml2);
             Console.WriteLine($"  Renamed conflicting schemas");
 
-            // 13. Convert number types with int32/int64 format to integer type
+            // 13. Fix stream response types to use binary content type
+            Console.WriteLine("Fixing stream response types...");
+            var (streamFixedYaml, streamFixedCount) = FixStreamResponseTypes(renamedYaml);
+            Console.WriteLine($"  Fixed {streamFixedCount} stream response operations");
+
+            // 14. Convert number types with int32/int64 format to integer type
             // This fixes code generators that interpret "type: number" as double even with format: int32
             Console.WriteLine("Converting number types to integer where appropriate...");
-            var (finalYaml, intConvertedCount) = ConvertNumberToInteger(renamedYaml);
+            var (finalYaml, intConvertedCount) = ConvertNumberToInteger(streamFixedYaml);
             Console.WriteLine($"  Converted {intConvertedCount} number types to integer");
 
-            // 14. Write to file
+            // 15. Write to file
             await File.WriteAllTextAsync(outputPath, finalYaml);
             Console.WriteLine($"  Written to: {outputPath}");
 
@@ -1335,6 +1340,282 @@ class Program
                 ConvertNumberToIntegerInNode(child, ref count);
             }
         }
+    }
+
+    /// <summary>
+    /// Fixes operations that return stream types (like StreamContent) to use proper binary response format.
+    ///
+    /// The OData-to-OpenAPI converter generates stream responses as JSON objects, but they should be:
+    /// - Content type: application/octet-stream (not application/json)
+    /// - Schema: $ref to BinaryContent component (type: string, format: binary)
+    ///
+    /// This function:
+    /// 1. Adds a BinaryContent schema to components/schemas
+    /// 2. Identifies response schemas that reference stream types (ODataStreamContent, etc.)
+    /// 3. Finds operations that use those response schemas
+    /// 4. Converts their responses to proper binary format with $ref to BinaryContent
+    /// </summary>
+    static (string yaml, int count) FixStreamResponseTypes(string yaml)
+    {
+        using var reader = new StringReader(yaml);
+        var yamlStream = new YamlStream();
+        yamlStream.Load(reader);
+
+        if (yamlStream.Documents.Count == 0)
+            return (yaml, 0);
+
+        var root = yamlStream.Documents[0].RootNode as YamlMappingNode;
+        if (root == null)
+            return (yaml, 0);
+
+        // Stream type schemas that indicate binary content
+        var streamSchemaNames = new HashSet<string>
+        {
+            "ODataStreamContent",
+            "DownloadTimeoutStreamContent",
+            "StreamContent"
+        };
+
+        // Step 1: Find response wrapper schemas that reference stream types
+        // These are schemas like "OrdersDownloadPdfResponse" that have anyOf: [ODataStreamContent]
+        var streamResponseSchemas = new HashSet<string>();
+        YamlMappingNode? schemas = null;
+
+        if (root.Children.TryGetValue(new YamlScalarNode("components"), out var componentsNode) &&
+            componentsNode is YamlMappingNode components &&
+            components.Children.TryGetValue(new YamlScalarNode("schemas"), out var schemasNode) &&
+            schemasNode is YamlMappingNode schemasMap)
+        {
+            schemas = schemasMap;
+
+            foreach (var schemaEntry in schemas.Children)
+            {
+                var schemaName = (schemaEntry.Key as YamlScalarNode)?.Value;
+                if (schemaName == null) continue;
+
+                if (schemaEntry.Value is YamlMappingNode schemaNode)
+                {
+                    // Check if this schema references a stream type via anyOf or allOf
+                    if (SchemaReferencesStreamType(schemaNode, streamSchemaNames))
+                    {
+                        streamResponseSchemas.Add(schemaName);
+                    }
+                }
+            }
+        }
+
+        // Also add the base stream types themselves
+        foreach (var streamType in streamSchemaNames)
+        {
+            streamResponseSchemas.Add(streamType);
+        }
+
+        // Step 2: Find and fix operations that use these stream response schemas
+        int fixedCount = 0;
+
+        if (root.Children.TryGetValue(new YamlScalarNode("paths"), out var pathsNode) &&
+            pathsNode is YamlMappingNode paths)
+        {
+            foreach (var pathEntry in paths.Children)
+            {
+                if (pathEntry.Value is YamlMappingNode pathItem)
+                {
+                    foreach (var operationEntry in pathItem.Children)
+                    {
+                        var operationName = (operationEntry.Key as YamlScalarNode)?.Value;
+                        // Skip non-operation keys like "description", "parameters"
+                        if (operationName == null ||
+                            operationName == "description" ||
+                            operationName == "parameters" ||
+                            operationName == "servers")
+                            continue;
+
+                        if (operationEntry.Value is YamlMappingNode operation)
+                        {
+                            if (FixOperationStreamResponse(operation, streamResponseSchemas))
+                            {
+                                fixedCount++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Step 3: If we fixed any operations, add the BinaryContent schema to components
+        if (fixedCount > 0 && schemas != null)
+        {
+            var binaryContentSchema = new YamlMappingNode
+            {
+                { "title", "BinaryContent" },
+                { "type", "string" },
+                { "format", "binary" },
+                { "description", "Binary file content returned as application/octet-stream" }
+            };
+
+            // Add BinaryContent schema if it doesn't already exist
+            var binaryContentKey = new YamlScalarNode("BinaryContent");
+            if (!schemas.Children.ContainsKey(binaryContentKey))
+            {
+                schemas.Children.Add(binaryContentKey, binaryContentSchema);
+            }
+        }
+
+        // Serialize the modified document
+        using var writer = new StringWriter();
+        yamlStream.Save(writer, assignAnchors: false);
+        var result = writer.ToString();
+
+        // Clean up the YAML output
+        result = result.Replace("...\n", "").TrimEnd();
+        if (result.StartsWith("---\n"))
+            result = result.Substring(4);
+
+        return (result, fixedCount);
+    }
+
+    /// <summary>
+    /// Checks if a schema references a stream type via anyOf, allOf, or direct $ref.
+    /// </summary>
+    static bool SchemaReferencesStreamType(YamlMappingNode schema, HashSet<string> streamSchemaNames)
+    {
+        // Check direct $ref
+        if (schema.Children.TryGetValue(new YamlScalarNode("$ref"), out var refNode))
+        {
+            var refValue = (refNode as YamlScalarNode)?.Value;
+            if (refValue != null)
+            {
+                foreach (var streamName in streamSchemaNames)
+                {
+                    if (refValue.EndsWith($"/{streamName}"))
+                        return true;
+                }
+            }
+        }
+
+        // Check anyOf
+        if (schema.Children.TryGetValue(new YamlScalarNode("anyOf"), out var anyOfNode) &&
+            anyOfNode is YamlSequenceNode anyOfSeq)
+        {
+            foreach (var item in anyOfSeq.Children)
+            {
+                if (item is YamlMappingNode itemMap &&
+                    itemMap.Children.TryGetValue(new YamlScalarNode("$ref"), out var itemRef))
+                {
+                    var refValue = (itemRef as YamlScalarNode)?.Value;
+                    if (refValue != null)
+                    {
+                        foreach (var streamName in streamSchemaNames)
+                        {
+                            if (refValue.EndsWith($"/{streamName}"))
+                                return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check allOf
+        if (schema.Children.TryGetValue(new YamlScalarNode("allOf"), out var allOfNode) &&
+            allOfNode is YamlSequenceNode allOfSeq)
+        {
+            foreach (var item in allOfSeq.Children)
+            {
+                if (item is YamlMappingNode itemMap &&
+                    itemMap.Children.TryGetValue(new YamlScalarNode("$ref"), out var itemRef))
+                {
+                    var refValue = (itemRef as YamlScalarNode)?.Value;
+                    if (refValue != null)
+                    {
+                        foreach (var streamName in streamSchemaNames)
+                        {
+                            if (refValue.EndsWith($"/{streamName}"))
+                                return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Fixes an operation's response if it references a stream schema.
+    /// Changes application/json to application/octet-stream and replaces schema with $ref to BinaryContent.
+    /// </summary>
+    static bool FixOperationStreamResponse(YamlMappingNode operation, HashSet<string> streamResponseSchemas)
+    {
+        if (!operation.Children.TryGetValue(new YamlScalarNode("responses"), out var responsesNode) ||
+            responsesNode is not YamlMappingNode responses)
+            return false;
+
+        bool fixed_ = false;
+
+        // Check each response (200, 201, etc.)
+        foreach (var responseEntry in responses.Children.ToList())
+        {
+            if (responseEntry.Value is not YamlMappingNode response)
+                continue;
+
+            if (!response.Children.TryGetValue(new YamlScalarNode("content"), out var contentNode) ||
+                contentNode is not YamlMappingNode content)
+                continue;
+
+            // Check if there's an application/json content with a stream schema reference
+            var jsonKey = new YamlScalarNode("application/json");
+            if (!content.Children.TryGetValue(jsonKey, out var jsonContentNode) ||
+                jsonContentNode is not YamlMappingNode jsonContent)
+                continue;
+
+            if (!jsonContent.Children.TryGetValue(new YamlScalarNode("schema"), out var schemaNode))
+                continue;
+
+            // Check if schema references a stream type
+            bool isStreamResponse = false;
+
+            if (schemaNode is YamlMappingNode schemaMap)
+            {
+                if (schemaMap.Children.TryGetValue(new YamlScalarNode("$ref"), out var refNode))
+                {
+                    var refValue = (refNode as YamlScalarNode)?.Value;
+                    if (refValue != null)
+                    {
+                        foreach (var streamSchema in streamResponseSchemas)
+                        {
+                            if (refValue.EndsWith($"/{streamSchema}"))
+                            {
+                                isStreamResponse = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (isStreamResponse)
+            {
+                // Create the schema reference to BinaryContent component
+                var binarySchemaRef = new YamlMappingNode
+                {
+                    { "$ref", "#/components/schemas/BinaryContent" }
+                };
+
+                // Create the new octet-stream content
+                var octetContent = new YamlMappingNode
+                {
+                    { "schema", binarySchemaRef }
+                };
+
+                // Remove application/json and add application/octet-stream
+                content.Children.Remove(jsonKey);
+                content.Children.Add(new YamlScalarNode("application/octet-stream"), octetContent);
+
+                fixed_ = true;
+            }
+        }
+
+        return fixed_;
     }
 
 }

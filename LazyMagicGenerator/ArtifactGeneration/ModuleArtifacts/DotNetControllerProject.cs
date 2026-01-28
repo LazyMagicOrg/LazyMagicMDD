@@ -193,13 +193,14 @@ namespace LazyMagic
                 RenameTemplateFiles(targetProjectDir);
 
                // Generate classes using NSwag
-               // We only use the NSWAG generated code as a starting point. It is not 
+               // We only use the NSWAG generated code as a starting point. It is not
                // very well suited for generated interface overriding.
                var nswagSettings = new CSharpControllerGeneratorSettings
                {
                    UseActionResultType = true,
                    ClassName = projectName,
                    ControllerTarget = NSwag.CodeGeneration.CSharp.Models.CSharpControllerTarget.AspNetCore,
+                   WrapResponses = false, // Disable FileResponse wrapper class generation for binary responses
                    CSharpGeneratorSettings =
                        {
                             Namespace = nameSpace,
@@ -216,7 +217,10 @@ namespace LazyMagic
                 var root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
 
                 // We don't need the schema classes so strip them out
-                root = RemoveGeneratedSchemaClasses(root); 
+                root = RemoveGeneratedSchemaClasses(root);
+
+                // Remove the FileResponse class - it's a client-side concept, not needed in controllers
+                root = RemoveClass(root, "FileResponse"); 
 
                 // Clean it up to make it readable.
                 var scratchpad = root.ToFullString();
@@ -580,10 +584,19 @@ namespace {namespaceName}
             // Transform return type from Task<ActionResult<T>> to Task<T>
             var returnType = method.ReturnType.ToString();
             var clientReturnType = TransformReturnTypeForClient(returnType);
-            
+
             // Get method name and parameters
             var methodName = method.Identifier.ToString();
             var parameters = method.ParameterList.ToString();
+
+            // Check if this is a binary response operation - if so, use FileResponse
+            if (clientReturnType == "System.Threading.Tasks.Task" && openApiDocument != null)
+            {
+                if (IsBinaryResponseOperation(openApiDocument, methodName))
+                {
+                    clientReturnType = "System.Threading.Tasks.Task<FileResponse>";
+                }
+            }
             
             // Keep FileParameter type - it's generated in the client interface project
 
@@ -689,6 +702,45 @@ namespace {namespaceName}
             }
         }
 
+        /// <summary>
+        /// Checks if an OpenAPI operation returns binary content (application/octet-stream with binary format).
+        /// </summary>
+        private bool IsBinaryResponseOperation(OpenApiDocument openApiDocument, string methodName)
+        {
+            // Find the operation by matching method name to operationId
+            foreach (var path in openApiDocument.Paths)
+            {
+                foreach (var operation in path.Value)
+                {
+                    // NSwag generates method names that include the module prefix
+                    // e.g., "ShopModuleOrders_DownloadPdfAsync" from "Orders.DownloadPdf"
+                    var operationId = operation.Value.OperationId ?? "";
+
+                    // Check if method name contains the operation ID (with various transformations)
+                    var normalizedOpId = operationId.Replace(".", "_").Replace("-", "_");
+                    var methodNameWithoutAsync = methodName.EndsWith("Async")
+                        ? methodName.Substring(0, methodName.Length - 5)
+                        : methodName;
+
+                    if (methodName.Contains(normalizedOpId) || methodNameWithoutAsync.EndsWith(normalizedOpId))
+                    {
+                        // Check if this operation returns binary content
+                        var successResponse = operation.Value.Responses.FirstOrDefault(r => r.Key.StartsWith("2"));
+                        if (successResponse.Value?.Content != null)
+                        {
+                            foreach (var content in successResponse.Value.Content)
+                            {
+                                if (content.Key == "application/octet-stream")
+                                {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
+        }
 
         private string GetClientReturnTypeFromOperation(NSwag.OpenApiOperation operation)
         {
