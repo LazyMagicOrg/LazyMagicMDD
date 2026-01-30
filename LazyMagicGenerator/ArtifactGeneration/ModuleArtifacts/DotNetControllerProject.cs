@@ -38,8 +38,7 @@ namespace LazyMagic
         public string OperationType { get; set; } = "default";
         public string FlowThroughDomain { get; set; } = "";
         public string FlowThroughPort { get; set; } = "";
-        public bool AutoGenCall { get; set; } = false;   
-        public string FlowThroughHelpersTpl { get; set; } = "Controller/FlowThroughHelpers.tpl";
+        public bool AutoGenCall { get; set; } = false;
 
         public string ControllerLifetime { get; set; } = "Singleton";
         public bool GenerateClientInterface { get; set; } = true;
@@ -175,8 +174,7 @@ namespace LazyMagic
                 }
 
                 // Copy the template project to the target project. Removes *.g.* files.
-                var flowThroughHelpersTplPath = CombinePath(solution.SolutionRootFolderPath, Path.Combine(ProjectTemplatesFolder, FlowThroughHelpersTpl));
-                var flowThroughHelpersTpl = File.ReadAllText(flowThroughHelpersTplPath);
+                var flowThroughHelpersTpl = GetFlowThroughHelpersTemplate();
                 var sourceProjectDir = CombinePath(solution.SolutionRootFolderPath, TemplatePath);
                 var targetProjectDir = CombinePath(solution.SolutionRootFolderPath, Path.Combine(OutputFolder, projectName));
                 var csprojFileName = GetCsprojFile(sourceProjectDir);
@@ -242,6 +240,13 @@ namespace LazyMagic
                 if (fromFormOperations.Count > 0)
                 {
                     TransformFromFormMethods(ref root, fromFormOperations, modulePath, openApiDocument);
+                }
+
+                // For flowthrough operations, strip [FromBody] parameters from interface methods
+                // since the body is forwarded via Request.Body stream, not model binding
+                if (OperationType == "flowthrough")
+                {
+                    StripFromBodyParametersFromInterface(ref root);
                 }
 
                 // Extract and save the Interface file
@@ -961,6 +966,30 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
         }
 
         /// <summary>
+        /// Reads the FlowThroughHelpers template from the embedded resource.
+        /// </summary>
+        private static string GetFlowThroughHelpersTemplate()
+        {
+            var assembly = typeof(DotNetControllerProject).Assembly;
+            var resourceName = "LazyMagicGenerator.ArtifactGeneration.ModuleArtifacts.FlowThroughHelpers.tpl";
+
+            using (var stream = assembly.GetManifestResourceStream(resourceName))
+            {
+                if (stream == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Could not find embedded resource '{resourceName}'. " +
+                        $"Available resources: {string.Join(", ", assembly.GetManifestResourceNames())}");
+                }
+
+                using (var reader = new StreamReader(stream))
+                {
+                    return reader.ReadToEnd();
+                }
+            }
+        }
+
+        /// <summary>
         /// Generates a separate file containing flow-through helper methods as a partial class.
         /// This avoids issues with NSwag processing (async suffix addition, method body replacement).
         /// </summary>
@@ -1580,7 +1609,8 @@ $@"
                             string body = string.Empty;
                             string indent = "            ";
                             var methodName = originalMethod.Identifier.Text;
-                            
+                            bool isFlowthrough = false;
+
                             // Skip the Init method - it has its own implementation
                             if (methodName == "Init")
                             {
@@ -1603,12 +1633,21 @@ $@"
                                         {
                                             case "default":
                                                 body = GenerateCallerInfoWithTryCatch(projectName, indent);
-                                                body += $"\r\n{indent}return await {gencallValue};";
+                                                // Only add return statement if gencallValue is not empty, otherwise throw NotImplementedException
+                                                if (!string.IsNullOrWhiteSpace(gencallValue))
+                                                {
+                                                    body += $"\r\n{indent}return await {gencallValue};";
+                                                }
+                                                else
+                                                {
+                                                    body += $"\r\n{indent}throw new NotImplementedException();";
+                                                }
                                                 break;
                                             case "flowthrough":
+                                                isFlowthrough = true;
                                                 var odata = extensions.ContainsKey("x-lz-odatapath") ? extensions["x-lz-odatapath"] : null;
-                                                body = GenerateCallerInfoWithTryCatch(projectName, indent);
-                                                body += "\r\n" + GenerateFlowThroughMethodBody(methodName, originalMethod, operationDetails, projectName, indent, odata);
+                                                // Authorization is now handled inside FlowThroughCoreAsync via exception filter
+                                                body = GenerateFlowThroughMethodBody(methodName, originalMethod, operationDetails, projectName, indent, odata);
                                                 break;
                                             default:
                                                 throw new Exception($"Unknown OperationType: {operationType}");
@@ -1620,14 +1659,23 @@ $@"
                             if (string.IsNullOrEmpty(body))
                                 body = $"{indent}throw new NotImplementedException();";
 
-                            var dummyMethod = $@"      void DummyMethod() 
+                            var dummyMethod = $@"      void DummyMethod()
         {{
 {body}
         }}";
                             var newBodySyntax = SyntaxFactory.ParseStatement(dummyMethod)
                                 .DescendantNodes()
                                 .OfType<BlockSyntax>().First();
-                            return updatedMethod.WithBody(newBodySyntax);
+
+                            var resultMethod = updatedMethod.WithBody(newBodySyntax);
+
+                            // For flowthrough operations, remove [FromBody] parameters since body is forwarded via stream
+                            if (isFlowthrough)
+                            {
+                                resultMethod = StripFromBodyParameters(resultMethod);
+                            }
+
+                            return resultMethod;
                         });
             code = root.ToFullString();
         }
@@ -1788,6 +1836,9 @@ $@"
 
         /// <summary>
         /// Generates the method body for flow-through operations.
+        /// Uses unified FlowThrough*Async methods with HttpMethod parameter.
+        /// Authorization is handled inside FlowThroughCoreAsync via exception filter.
+        /// Body forwarding uses direct stream copy (no model binding).
         /// </summary>
         private static string GenerateFlowThroughMethodBody(
             string methodName,
@@ -1802,7 +1853,7 @@ $@"
                 return $"{indent}throw new NotImplementedException(\"Operation details not found for {methodName}\");";
             }
 
-            var (httpMethod, path, _, hasBody, _) = details;
+            var (httpMethod, path, _, _, _) = details;
 
             // Extract return type directly from method signature - NSwag already has the correct type
             var (returnType, isCollection, hasReturnValue) = ExtractReturnTypeFromMethod(method);
@@ -1814,11 +1865,17 @@ $@"
             var queryParams = GetQueryParametersFromMethod(method);
             var queryParamsObject = BuildQueryParamsObject(queryParams);
 
-            // Check if method has a 'body' parameter - if not, we can't pass it
-            var hasBodyParameter = method.ParameterList.Parameters.Any(p => p.Identifier.Text == "body");
-            
-            // If OpenAPI says there's a body but there's no body parameter, don't pass body
-            var shouldPassBody = hasBody && hasBodyParameter;
+            // Map HTTP method string to HttpMethod static property
+            string httpMethodProperty;
+            switch (httpMethod.ToUpperInvariant())
+            {
+                case "GET": httpMethodProperty = "HttpMethod.Get"; break;
+                case "POST": httpMethodProperty = "HttpMethod.Post"; break;
+                case "PUT": httpMethodProperty = "HttpMethod.Put"; break;
+                case "DELETE": httpMethodProperty = "HttpMethod.Delete"; break;
+                case "PATCH": httpMethodProperty = "HttpMethod.Patch"; break;
+                default: throw new Exception($"Unsupported HTTP method: {httpMethod}");
+            }
 
             var body = new System.Text.StringBuilder();
 
@@ -1831,76 +1888,88 @@ $@"
             // Build the optional query params argument
             var queryParamsArg = queryParamsObject != null ? ", queryParams" : "";
 
-            if (httpMethod.Equals("get", StringComparison.OrdinalIgnoreCase))
+            // Generate the appropriate flow-through method call
+            if (isCollection)
             {
-                if (isCollection)
-                {
-                    body.AppendLine($"{indent}return await FlowThroughGetCollectionAsync<{returnType}>(callerInfo, {pathExpression}{queryParamsArg});");
-                }
-                else if (hasReturnValue)
-                {
-                    body.AppendLine($"{indent}return await FlowThroughGetAsync<{returnType}>(callerInfo, {pathExpression}{queryParamsArg});");
-                }
-                else
-                {
-                    // IActionResult return - use non-generic version
-                    body.AppendLine($"{indent}return await FlowThroughGetAsync(callerInfo, {pathExpression}{queryParamsArg});");
-                }
+                // Collection return: FlowThroughCollectionAsync<T>
+                body.AppendLine($"{indent}return await FlowThroughCollectionAsync<{returnType}>({httpMethodProperty}, {pathExpression}{queryParamsArg});");
             }
-            else if (httpMethod.Equals("post", StringComparison.OrdinalIgnoreCase))
+            else if (hasReturnValue)
             {
-                var bodyArg = shouldPassBody ? "body" : "null";
-                if (hasReturnValue)
-                {
-                    body.AppendLine($"{indent}return await FlowThroughPostAsync<{returnType}>(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
-                }
-                else
-                {
-                    body.AppendLine($"{indent}return await FlowThroughPostAsync(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
-                }
-            }
-            else if (httpMethod.Equals("put", StringComparison.OrdinalIgnoreCase))
-            {
-                var bodyArg = shouldPassBody ? "body" : "null";
-                if (hasReturnValue)
-                {
-                    body.AppendLine($"{indent}return await FlowThroughPutAsync<{returnType}>(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
-                }
-                else
-                {
-                    body.AppendLine($"{indent}return await FlowThroughPutAsync(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
-                }
-            }
-            else if (httpMethod.Equals("delete", StringComparison.OrdinalIgnoreCase))
-            {
-                if (hasReturnValue)
-                {
-                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync<{returnType}>(callerInfo, {pathExpression}{queryParamsArg});");
-                }
-                else
-                {
-                    body.AppendLine($"{indent}return await FlowThroughDeleteAsync(callerInfo, {pathExpression}{queryParamsArg});");
-                }
-            }
-            else if (httpMethod.Equals("patch", StringComparison.OrdinalIgnoreCase))
-            {
-                // PATCH uses same pattern as PUT
-                var bodyArg = shouldPassBody ? "body" : "null";
-                if (hasReturnValue)
-                {
-                    body.AppendLine($"{indent}return await FlowThroughPatchAsync<{returnType}>(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
-                }
-                else
-                {
-                    body.AppendLine($"{indent}return await FlowThroughPatchAsync(callerInfo, {pathExpression}, {bodyArg}{queryParamsArg});");
-                }
+                // Single object return: FlowThroughAsync<T>
+                body.AppendLine($"{indent}return await FlowThroughAsync<{returnType}>({httpMethodProperty}, {pathExpression}{queryParamsArg});");
             }
             else
             {
-                body.AppendLine($"{indent}throw new NotImplementedException(\"Unsupported HTTP method: {httpMethod}\");");
+                // No content return (IActionResult): FlowThroughNoContentAsync
+                body.AppendLine($"{indent}return await FlowThroughNoContentAsync({httpMethodProperty}, {pathExpression}{queryParamsArg});");
             }
 
             return body.ToString().TrimEnd();
+        }
+
+        /// <summary>
+        /// Removes parameters with [FromBody] attribute from a method declaration.
+        /// For flowthrough operations, the body is forwarded via Request.Body stream,
+        /// so [FromBody] parameters would cause ASP.NET to consume the body before our code can read it.
+        /// </summary>
+        private static MethodDeclarationSyntax StripFromBodyParameters(MethodDeclarationSyntax method)
+        {
+            var parametersToKeep = method.ParameterList.Parameters
+                .Where(p => !p.AttributeLists
+                    .SelectMany(al => al.Attributes)
+                    .Any(a => a.Name.ToString() == "FromBody" || a.Name.ToString() == "FromBodyAttribute"))
+                .ToArray();
+
+            if (parametersToKeep.Length == method.ParameterList.Parameters.Count)
+            {
+                // No [FromBody] parameters found, return unchanged
+                return method;
+            }
+
+            var newParameterList = SyntaxFactory.ParameterList(
+                SyntaxFactory.SeparatedList(parametersToKeep));
+
+            return method.WithParameterList(newParameterList);
+        }
+
+        /// <summary>
+        /// Strips parameters named "body" from all methods in interface declarations.
+        /// For flowthrough operations, the body is forwarded via Request.Body stream,
+        /// so body parameters should not appear in the interface.
+        /// Interface methods don't have [FromBody] attributes, so we match by parameter name.
+        /// </summary>
+        private static void StripFromBodyParametersFromInterface(ref CompilationUnitSyntax root)
+        {
+            var interfaceNode = root.DescendantNodes()
+                .OfType<InterfaceDeclarationSyntax>()
+                .FirstOrDefault();
+
+            if (interfaceNode == null)
+                return;
+
+            var updatedInterface = interfaceNode.ReplaceNodes(
+                interfaceNode.Members.OfType<MethodDeclarationSyntax>(),
+                (originalMethod, updatedMethod) =>
+                {
+                    // In interfaces, parameters don't have [FromBody] attribute,
+                    // so we identify body parameters by name "body"
+                    var parametersToKeep = updatedMethod.ParameterList.Parameters
+                        .Where(p => p.Identifier.Text != "body")
+                        .ToArray();
+
+                    if (parametersToKeep.Length == updatedMethod.ParameterList.Parameters.Count)
+                    {
+                        return updatedMethod; // No body parameter found
+                    }
+
+                    var newParameterList = SyntaxFactory.ParameterList(
+                        SyntaxFactory.SeparatedList(parametersToKeep));
+
+                    return updatedMethod.WithParameterList(newParameterList);
+                });
+
+            root = root.ReplaceNode(interfaceNode, updatedInterface);
         }
 
         /// <summary>

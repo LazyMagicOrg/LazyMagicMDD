@@ -28,4 +28,8 @@
     <Folder Include="ArtifactGeneration\WebAppArtifacts\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="ArtifactGeneration\ModuleArtifacts\FlowThroughHelpers.tpl" />
+  </ItemGroup>
+
 </Project>
