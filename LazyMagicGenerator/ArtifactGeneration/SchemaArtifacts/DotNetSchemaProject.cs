@@ -80,9 +80,27 @@ namespace LazyMagic
 
                 // Read OpenApi specifications
                 var openApiSpecs = directive.OpenApiSpecs ?? new List<string>();
-                var yamlSpec = await MergeApiFilesAsync(solution.SolutionRootFolderPath, openApiSpecs); 
+                var yamlSpec = await MergeApiFilesAsync(solution.SolutionRootFolderPath, openApiSpecs);
                 var schemaEntities = GetSchemaNames(yamlSpec);
-                var openApiDocument = solution.AggregateSchemas;
+
+                // For shared schemas, use AggregateSchemas (all shared specs merged) so they
+                // can cross-reference each other's types via $ref.
+                // For non-shared schemas, merge AggregateSchemas (shared types) with this
+                // directive's own spec. This provides access to shared types for $ref resolution
+                // without cross-contamination from other non-shared schemas.
+                OpenApiDocument openApiDocument;
+                if (directive.SharedSchemas)
+                {
+                    openApiDocument = solution.AggregateSchemas;
+                }
+                else
+                {
+                    var mergedYaml = await MergeYamlAsync(
+                        solution.SolutionRootFolderPath,
+                        new List<string> { yamlSpec, solution.AggregateSchemas.ToYaml() }
+                    );
+                    openApiDocument = await ParseOpenApiYamlContent(mergedYaml);
+                }
 
                 // Get Dependencies - compute transitive closure
                 var allSchemaDependencies = GetTransitiveSchemaDependencies(directive.Schemas, solution.Directives);

@@ -197,6 +197,7 @@ namespace LazyMagic
                {
                    UseActionResultType = true,
                    ClassName = projectName,
+                   OperationNameGenerator = new LzOperationNameGenerator(),
                    ControllerTarget = NSwag.CodeGeneration.CSharp.Models.CSharpControllerTarget.AspNetCore,
                    WrapResponses = false, // Disable FileResponse wrapper class generation for binary responses
                    CSharpGeneratorSettings =
@@ -468,9 +469,10 @@ namespace {namespaceName}
             {
                 UseActionResultType = true,
                 ClassName = $"{moduleName}Controller",
+                OperationNameGenerator = new LzOperationNameGenerator(),
                 ControllerTarget = NSwag.CodeGeneration.CSharp.Models.CSharpControllerTarget.AspNetCore,
                 GenerateModelValidationAttributes = false,
-                CSharpGeneratorSettings = 
+                CSharpGeneratorSettings =
                 {
                     Namespace = namespaceName,
                     GenerateDataAnnotations = false,
@@ -923,21 +925,21 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
 ";
             File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
         }
-        private static void GenerateBaseClass(ref CompilationUnitSyntax root, 
-            OpenApiDocument openApiDocument, 
-            List<string> interfaces, 
-            List<string> dependencies, 
-            string projectName, 
-            string filePath, 
-            string operationType, 
-            bool autoGenCall, 
+        private static void GenerateBaseClass(ref CompilationUnitSyntax root,
+            OpenApiDocument openApiDocument,
+            List<string> interfaces,
+            List<string> dependencies,
+            string projectName,
+            string filePath,
+            string operationType,
+            bool autoGenCall,
             string flowThroughHelpersTpl)
         {
             InsertPragma(ref root, "1998", "Disable async warning."); // Disable async warning
 
-            RemoveConstructor(ref root); // Remove constructor 
+            RemoveConstructor(ref root); // Remove constructor
 
-            RemoveMember(ref root, "_implementation"); // Remove _implementation field 
+            RemoveMember(ref root, "_implementation"); // Remove _implementation field
 
             InsertRepoVars(ref root, interfaces);
 
@@ -952,14 +954,14 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
 
             EnsureMethodsHaveAsyncSuffix(ref root); // Ensure all methods have Async suffix to match interface
 
-            MarkMethodsVirtualAsync(ref root); // Make all methods virtual async 
+            MarkMethodsVirtualAsync(ref root); // Make all methods virtual async
 
-            UpdateControllerMethodBodies(ref root, openApiDocument, projectName, operationType, autoGenCall); // Use x-lz-gencall attributes to generate method bodies   
+            UpdateControllerMethodBodies(ref root, openApiDocument, projectName, operationType, autoGenCall); // Use x-lz-gencall attributes to generate method bodies
 
             InsertMethodIntoClass(ref root, "\r\n\t\tprotected virtual void Init() { }"); // Add Init method
 
             var code = root.ToFullString();
-            
+
             FixNswagSyntax(code); // NSwag seems to have a _template bug. Microsoft.AspNetCore.Mvc.HttpGET should be Microsoft.AspNetCore.Mvc.HttpGet
 
             File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
@@ -1595,7 +1597,7 @@ $@"
 
         private static void UpdateControllerMethodBodies(ref CompilationUnitSyntax root, OpenApiDocument openApiDocument, string projectName, string operationType, bool autoGenCall)
         {
-            var methodExtensions = MethodExtensionsData(openApiDocument); // Dictionary<operationId, Dictionary<extensionKey, extensionValue>>   
+            var methodExtensions = MethodExtensionsData(openApiDocument); // Dictionary<operationId, Dictionary<extensionKey, extensionValue>>
             var operationDetails = GetOperationDetails(openApiDocument); // Dictionary<operationId, (httpMethod, path, returnType, hasBody)>
 
             var code = root.ToFullString();
@@ -1839,6 +1841,11 @@ $@"
         /// Uses unified FlowThrough*Async methods with HttpMethod parameter.
         /// Authorization is handled inside FlowThroughCoreAsync via exception filter.
         /// Body forwarding uses direct stream copy (no model binding).
+        /// For standard paths, the method body omits queryParams so the template forwards
+        /// Request.QueryString directly. For OData alias paths (containing @paramName),
+        /// query params are still built into a dictionary for SubstitutePathAliases.
+        /// Note: [FromQuery] parameters remain in the method signature for override use,
+        /// even when the generated body doesn't reference them.
         /// </summary>
         private static string GenerateFlowThroughMethodBody(
             string methodName,
@@ -1859,11 +1866,12 @@ $@"
             var (returnType, isCollection, hasReturnValue) = ExtractReturnTypeFromMethod(method);
 
             // Build the path with parameter substitution
-            var pathExpression = ConvertPathToInterpolatedString((odata == null) ? path : odata, method);
+            var rawPath = (odata == null) ? path : odata;
+            var pathExpression = ConvertPathToInterpolatedString(rawPath, method);
 
-            // Get query parameters from method signature (parameters with [FromQuery] attribute)
-            var queryParams = GetQueryParametersFromMethod(method);
-            var queryParamsObject = BuildQueryParamsObject(queryParams);
+            // Check if the path contains OData parameter aliases (@paramName).
+            // If so, we need to keep query params to support SubstitutePathAliases in the template.
+            var hasODataAliases = rawPath.Contains("@");
 
             // Map HTTP method string to HttpMethod static property
             string httpMethodProperty;
@@ -1879,30 +1887,35 @@ $@"
 
             var body = new System.Text.StringBuilder();
 
-            // Generate query params variable if there are any
-            if (queryParamsObject != null)
+            if (hasODataAliases)
             {
-                body.AppendLine($"{indent}var queryParams = {queryParamsObject};");
-            }
+                // OData alias path: keep query params dictionary for SubstitutePathAliases
+                var queryParams = GetQueryParametersFromMethod(method);
+                var queryParamsObject = BuildQueryParamsObject(queryParams);
 
-            // Build the optional query params argument
-            var queryParamsArg = queryParamsObject != null ? ", queryParams" : "";
+                if (queryParamsObject != null)
+                {
+                    body.AppendLine($"{indent}var queryParams = {queryParamsObject};");
+                }
 
-            // Generate the appropriate flow-through method call
-            if (isCollection)
-            {
-                // Collection return: FlowThroughCollectionAsync<T>
-                body.AppendLine($"{indent}return await FlowThroughCollectionAsync<{returnType}>({httpMethodProperty}, {pathExpression}{queryParamsArg});");
-            }
-            else if (hasReturnValue)
-            {
-                // Single object return: FlowThroughAsync<T>
-                body.AppendLine($"{indent}return await FlowThroughAsync<{returnType}>({httpMethodProperty}, {pathExpression}{queryParamsArg});");
+                var queryParamsArg = queryParamsObject != null ? ", queryParams" : "";
+
+                if (isCollection)
+                    body.AppendLine($"{indent}return await FlowThroughCollectionAsync<{returnType}>({httpMethodProperty}, {pathExpression}{queryParamsArg});");
+                else if (hasReturnValue)
+                    body.AppendLine($"{indent}return await FlowThroughAsync<{returnType}>({httpMethodProperty}, {pathExpression}{queryParamsArg});");
+                else
+                    body.AppendLine($"{indent}return await FlowThroughNoContentAsync({httpMethodProperty}, {pathExpression}{queryParamsArg});");
             }
             else
             {
-                // No content return (IActionResult): FlowThroughNoContentAsync
-                body.AppendLine($"{indent}return await FlowThroughNoContentAsync({httpMethodProperty}, {pathExpression}{queryParamsArg});");
+                // Standard flowthrough: no query params needed, Request.QueryString is forwarded by the template
+                if (isCollection)
+                    body.AppendLine($"{indent}return await FlowThroughCollectionAsync<{returnType}>({httpMethodProperty}, {pathExpression});");
+                else if (hasReturnValue)
+                    body.AppendLine($"{indent}return await FlowThroughAsync<{returnType}>({httpMethodProperty}, {pathExpression});");
+                else
+                    body.AppendLine($"{indent}return await FlowThroughNoContentAsync({httpMethodProperty}, {pathExpression});");
             }
 
             return body.ToString().TrimEnd();

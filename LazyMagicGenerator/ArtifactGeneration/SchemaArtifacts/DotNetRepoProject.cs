@@ -79,8 +79,22 @@ namespace LazyMagic
                 var yamlSpec = await MergeApiFilesAsync(solution.SolutionRootFolderPath, openApiSpecs);
                 var schemaItems = GetSchemaNames(yamlSpec);
 
-                //OpenApiDocument openApiDocument = await LoadOpenApiFilesAsync(solution.SolutionRootFolderPath, directive.OpenApiSpecs);
-                OpenApiDocument openApiDocument = solution.AggregateSchemas;
+                // For shared schemas, use AggregateSchemas (all shared specs merged).
+                // For non-shared schemas, merge shared aggregate with directive's own spec
+                // to avoid cross-contamination from other non-shared schemas.
+                OpenApiDocument openApiDocument;
+                if (directive.SharedSchemas)
+                {
+                    openApiDocument = solution.AggregateSchemas;
+                }
+                else
+                {
+                    var mergedYaml = await MergeYamlAsync(
+                        solution.SolutionRootFolderPath,
+                        new List<string> { yamlSpec, solution.AggregateSchemas.ToYaml() }
+                    );
+                    openApiDocument = await ParseOpenApiYamlContent(mergedYaml);
+                }
 
                 // Set project name and namespace
                 var projectName =  directive.Key + NameSuffix ?? "";

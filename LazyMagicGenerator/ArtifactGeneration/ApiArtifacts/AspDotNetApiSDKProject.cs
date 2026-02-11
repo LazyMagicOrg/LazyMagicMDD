@@ -76,8 +76,10 @@ namespace LazyMagic
                 PackageReferences.AddRange(GetExportedPackageReferences(controllerArtifacts));
                 PackageReferences = PackageReferences.Distinct().ToList();
 
-                GlobalUsings.AddRange(GetExportedGlobalUsings(schemaArtifacts));
-                GlobalUsings = GlobalUsings.Distinct().ToList();
+                // Schema-specific usings are NOT added as global usings. Instead, they are
+                // added as file-scoped usings in per-module partial class files to avoid
+                // type ambiguity when multiple schemas define types with the same name
+                // (e.g., Address in ShopSchema vs Address in ShopRestSchema).
 
                 ServiceRegistrations.AddRange(GetExportedServiceRegistrations(schemaArtifacts));
                 //ServiceRegistrations.AddRange(GetExportedServiceRegistrations(controllerArtifacts));
@@ -107,6 +109,18 @@ namespace LazyMagic
                     if (container?.Modules != null)
                     {
                         moduleNames.UnionWith(container.Modules);
+                    }
+                }
+
+                // Build module → schema namespace mapping for per-module partial class files
+                var moduleSchemaUsings = new Dictionary<string, List<string>>();
+                foreach (var moduleName in moduleNames)
+                {
+                    if (solution.Directives.TryGetValue(moduleName, out var modDirective) && modDirective is Module moduleDirective)
+                    {
+                        var moduleSchemas = moduleDirective.Schemas ?? new List<string>();
+                        var moduleSchemaArtifacts = solution.Directives.GetArtifactsByType<DotNetSchemaProject>(moduleSchemas).ToList<ArtifactBase>();
+                        moduleSchemaUsings[moduleName] = GetExportedGlobalUsings(moduleSchemaArtifacts).Distinct().ToList();
                     }
                 }
 
@@ -153,7 +167,7 @@ namespace LazyMagic
                 // Extract x-lz-fromform operations for transformation
                 var fromFormOperations = GetFromFormOperations(openApiDocument);
 
-                GenerateClientSDKClass(code, projectName, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, projectName + ".g.cs"), moduleNames.ToList(), fromFormOperations, openApiDocument);
+                GenerateClientSDKClass(code, projectName, nameSpace, Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, projectName + ".g.cs"), moduleNames.ToList(), fromFormOperations, openApiDocument, moduleSchemaUsings);
 
                 // Exports
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName + ".csproj");
@@ -162,7 +176,7 @@ namespace LazyMagic
                 throw new Exception($"Error generating {GetType().Name} {ex.Message}");
             }
         }
-        private void GenerateClientSDKClass(string code, string projectName, string filePath, List<string> moduleNames, Dictionary<string, string> fromFormOperations, OpenApiDocument openApiDocument)
+        private void GenerateClientSDKClass(string code, string projectName, string nameSpace, string filePath, List<string> moduleNames, Dictionary<string, string> fromFormOperations, OpenApiDocument openApiDocument, Dictionary<string, List<string>> moduleSchemaUsings)
         {
             // Generate the client SDK
             var root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
@@ -175,33 +189,121 @@ namespace LazyMagic
 
             // Remove the NSWAG-generated interface (we'll create our own)
             RemoveInterface(ref root);
-            
+
             // Transform methods with x-lz-fromform to use single body parameter
             if (fromFormOperations != null && fromFormOperations.Count > 0)
             {
                 TransformFromFormMethods(ref root, fromFormOperations, openApiDocument);
             }
 
-            // Get the code as string
-            var outputCode = root.ToFullString();
+            var directory = Path.GetDirectoryName(filePath);
 
-            // Add using statements for module namespaces at the top of the file
-            // This is needed for FileParameter and other types defined in module client interfaces
-            if (moduleNames != null && moduleNames.Any())
+            // Split methods by module into separate partial class files.
+            // Each per-module file has file-scoped usings for only its module's schemas,
+            // avoiding type ambiguity when multiple schemas define the same type names
+            // (e.g., Address in ShopSchema vs Address in ShopRestSchema).
+            var classDecl = root.DescendantNodes().OfType<ClassDeclarationSyntax>()
+                .FirstOrDefault(c => c.Identifier.Text == projectName);
+
+            if (classDecl != null && moduleNames != null && moduleNames.Any())
             {
-                var moduleUsings = string.Join("\r\n", moduleNames.Select(m => $"using {m};"));
-                // Insert after the first line (which is the auto-generated comment)
-                var firstNewline = outputCode.IndexOf('\n');
-                if (firstNewline > 0)
+                // Sort module names by length descending to match longer prefixes first
+                // (e.g., "ShopRestModule" before "ShopModule")
+                var sortedModuleNames = moduleNames.OrderByDescending(m => m.Length).ToList();
+
+                var moduleMethodGroups = new Dictionary<string, List<MemberDeclarationSyntax>>();
+                var infrastructureMembers = new List<MemberDeclarationSyntax>();
+
+                foreach (var member in classDecl.Members)
                 {
-                    outputCode = outputCode.Insert(firstNewline + 1, moduleUsings + "\r\n");
+                    if (member is MethodDeclarationSyntax method)
+                    {
+                        var methodName = method.Identifier.Text;
+                        var matchedModule = sortedModuleNames.FirstOrDefault(m => methodName.StartsWith(m));
+                        if (matchedModule != null)
+                        {
+                            if (!moduleMethodGroups.ContainsKey(matchedModule))
+                                moduleMethodGroups[matchedModule] = new List<MemberDeclarationSyntax>();
+                            moduleMethodGroups[matchedModule].Add(member);
+                        }
+                        else
+                        {
+                            infrastructureMembers.Add(member);
+                        }
+                    }
+                    else
+                    {
+                        infrastructureMembers.Add(member);
+                    }
                 }
+
+                // Write per-module partial class files
+                foreach (var kvp in moduleMethodGroups)
+                {
+                    var moduleName = kvp.Key;
+                    var methods = kvp.Value;
+
+                    // Get schema usings for this module, plus the module namespace itself
+                    var usings = new List<string>();
+                    if (moduleSchemaUsings.ContainsKey(moduleName))
+                        usings.AddRange(moduleSchemaUsings[moduleName]);
+                    usings.Add(moduleName); // Module namespace for types like FileParameter
+                    usings = usings.Distinct().ToList();
+
+                    var usingStatements = string.Join("\r\n", usings.Select(u => $"using {u};"));
+                    var methodsCode = string.Join("\r\n", methods.Select(m => m.ToFullString()));
+
+                    var content = $@"//----------------------
+// <auto-generated>
+//     Generated by LazyMagic, do not edit directly. Changes will be overwritten.
+// </auto-generated>
+//----------------------
+{usingStatements}
+
+#pragma warning disable 108
+#pragma warning disable 114
+#pragma warning disable 472
+#pragma warning disable 612
+#pragma warning disable 1573
+#pragma warning disable 1591
+#pragma warning disable 8073
+#pragma warning disable 3016
+#pragma warning disable 8603
+#pragma warning disable 8604
+#pragma warning disable 8625
+
+namespace {nameSpace}
+{{
+    public partial class {projectName}
+    {{
+{methodsCode}
+    }}
+}}
+
+#pragma warning restore 8625
+#pragma warning restore 8604
+#pragma warning restore 8603
+#pragma warning restore 3016
+#pragma warning restore 8073
+#pragma warning restore 1591
+#pragma warning restore 1573
+#pragma warning restore 612
+#pragma warning restore 472
+#pragma warning restore 114
+#pragma warning restore 108
+";
+                    var moduleFilePath = Path.Combine(directory, $"{projectName}.{moduleName}.g.cs");
+                    File.WriteAllText(moduleFilePath, content);
+                }
+
+                // Replace class members with only infrastructure (non-module) members
+                var newClassDecl = classDecl.WithMembers(SyntaxFactory.List(infrastructureMembers));
+                root = root.ReplaceNode(classDecl, newClassDecl);
             }
 
-            // Write the client class file (without the interface)
+            // Write the main class file (infrastructure only - no schema-specific types)
+            var outputCode = root.ToFullString();
             File.WriteAllText(filePath, outputCode);
-
-            var directory = Path.GetDirectoryName(filePath);
 
             // Generate and write our custom interface that inherits from module interfaces
             var interfaceCode = GenerateAggregateInterface(projectName, moduleNames);

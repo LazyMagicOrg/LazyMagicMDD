@@ -101,6 +101,7 @@ namespace LazyMagic
                     SolutionRootFolderPath,
                     Directives.Values
                         .OfType<Schema>()
+                        .Where(s => s.SharedSchemas)
                         .SelectMany(s => s.OpenApiSpecs)
                         .Distinct()
                         .ToList()

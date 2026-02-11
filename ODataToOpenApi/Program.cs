@@ -19,7 +19,7 @@ class Program
         
         var outputPath = args.Length > 1 
             ? args[1] 
-            : "/mnt/c/Users/TimothyMay/repos/_Dev/Monro/Service/openapi.shop.yaml";
+            : "/mnt/c/Users/TimothyMay/repos/_Dev/Monro/Service/openapi.shop-odata.yaml";
 
         Console.WriteLine($"OData to OpenAPI Converter");
         Console.WriteLine($"==========================");

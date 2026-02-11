@@ -136,22 +136,28 @@ namespace {projectName}
 
         /// <summary>
         /// Creates an HttpRequestMessage for flow-through operations, copying relevant headers from the source request.
+        /// When queryParams is null (the default for generated flowthrough code), the incoming request's
+        /// query string is forwarded directly. When queryParams is provided (e.g., from an override or
+        /// OData alias paths), the dictionary is used to build the query string.
         /// </summary>
         protected virtual HttpRequestMessage CreateFlowThroughRequest(HttpMethod method, string path, HttpRequest sourceRequest, IDictionary<string, object> queryParams = null)
         {
             // Strip module prefix before forwarding
             var forwardPath = StripModulePrefix(path);
 
-            // Substitute @paramName aliases with values from queryParams
             if (queryParams != null)
             {
+                // Explicit query params provided (e.g., from an override or OData alias path)
                 forwardPath = SubstitutePathAliases(forwardPath, queryParams);
+                if (queryParams.Count > 0)
+                {
+                    forwardPath += BuildQueryString(queryParams);
+                }
             }
-
-            // Append remaining query string from queryParams dictionary
-            if (queryParams != null && queryParams.Count > 0)
+            else
             {
-                forwardPath += BuildQueryString(queryParams);
+                // Default flowthrough: forward the incoming query string as-is
+                forwardPath += sourceRequest.QueryString.Value ?? string.Empty;
             }
 
             var request = new HttpRequestMessage(method, forwardPath);
@@ -250,7 +256,12 @@ namespace {projectName}
             var content = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
-                return StatusCode((int)response.StatusCode, content);
+                return new ContentResult
+                {
+                    StatusCode = (int)response.StatusCode,
+                    Content = content,
+                    ContentType = response.Content.Headers.ContentType?.MediaType ?? "application/json"
+                };
 
             var result = Newtonsoft.Json.JsonConvert.DeserializeObject<T>(content);
             return StatusCode((int)response.StatusCode, result);
@@ -270,7 +281,12 @@ namespace {projectName}
             var content = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
-                return StatusCode((int)response.StatusCode, content);
+                return new ContentResult
+                {
+                    StatusCode = (int)response.StatusCode,
+                    Content = content,
+                    ContentType = response.Content.Headers.ContentType?.MediaType ?? "application/json"
+                };
 
             var result = Newtonsoft.Json.JsonConvert.DeserializeObject<ICollection<T>>(content);
             return StatusCode((int)response.StatusCode, result);
@@ -291,7 +307,12 @@ namespace {projectName}
             if (!response.IsSuccessStatusCode)
             {
                 var content = await response.Content.ReadAsStringAsync();
-                return StatusCode((int)response.StatusCode, content);
+                return new ContentResult
+                {
+                    StatusCode = (int)response.StatusCode,
+                    Content = content,
+                    ContentType = response.Content.Headers.ContentType?.MediaType ?? "application/json"
+                };
             }
 
             return StatusCode((int)response.StatusCode);
@@ -336,7 +357,12 @@ namespace {projectName}
             var content = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
-                return StatusCode((int)response.StatusCode, content);
+                return new ContentResult
+                {
+                    StatusCode = (int)response.StatusCode,
+                    Content = content,
+                    ContentType = response.Content.Headers.ContentType?.MediaType ?? "application/json"
+                };
 
             return Content(content, response.Content.Headers.ContentType?.MediaType ?? "application/json");
         }

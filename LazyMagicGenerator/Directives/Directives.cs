@@ -162,15 +162,35 @@ namespace LazyMagic
             {
                 try
                 {
-                    // Merge OpenApi specs - this contains the paths for this controller + the entire aggregated schema
-                    // Note: It's necessary to use the aggregated schema because NSWAG will fail if it can't find a schema
-                    // object. We won't use this aggregated schema as its' contents are already handled by the 
-                    // DotNetSchema and DotNetRepo projects generated from Schema directives.
+                    // Merge OpenApi specs - this contains the paths for this controller + schemas for ref resolution.
+                    // NSwag will fail if a path operation references a schema not in the spec.
+                    // We include schemas from:
+                    // 1. The module's own OpenApiSpecs (paths + schemas)
+                    // 2. The module's referenced Schema directives' OpenApiSpecs (schemas only, no paths)
+                    // 3. The global AggregateSchemas (shared schemas)
                     var openApiSpecs = module.OpenApiSpecs ?? new List<string>();
                     var openApiSpecsYaml = await MergeApiFilesAsync(solution.SolutionRootFolderPath, openApiSpecs);
+
+                    // Load schemas from the module's referenced Schema directives (schemas only, no paths)
+                    var moduleSchemaSpecs = (module.Schemas ?? new List<string>())
+                        .Where(schemaName => solution.Directives.ContainsKey(schemaName) && solution.Directives[schemaName] is Schema)
+                        .SelectMany(schemaName => ((Schema)solution.Directives[schemaName]).OpenApiSpecs)
+                        .Except(openApiSpecs) // Exclude specs already loaded by the module
+                        .Distinct()
+                        .ToList();
+
+                    var schemasToMerge = new List<string> { openApiSpecsYaml };
+                    if (moduleSchemaSpecs.Any())
+                    {
+                        var moduleSchemasDoc = await LoadOpenApiFilesAsync(solution.SolutionRootFolderPath, moduleSchemaSpecs);
+                        moduleSchemasDoc.Paths.Clear(); // Only include schemas, not paths
+                        schemasToMerge.Add(moduleSchemasDoc.ToYaml());
+                    }
+                    schemasToMerge.Add(solution.AggregateSchemas.ToYaml());
+
                     openApiSpecsYaml = await MergeYamlAsync(
                         solution.SolutionRootFolderPath,
-                        new List<string> { openApiSpecsYaml, solution.AggregateSchemas.ToYaml() }
+                        schemasToMerge
                         );
                     // openApiSpecsYaml contains the paths for this module and schema definitions for all modules.
                     module.OpenApiSpec = openApiSpecsYaml;
