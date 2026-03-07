@@ -176,6 +176,12 @@ namespace {projectName}
                 request.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
             }
 
+            // Forward the viewer-facing host to upstream services via the
+            // standard reverse-proxy header. The actual Host header remains
+            // set to the integration base URL (derived from HttpClient.BaseAddress).
+            request.Headers.TryAddWithoutValidation(
+                "X-Forwarded-Host", sourceRequest.Host.Value);
+
             return request;
         }
 
