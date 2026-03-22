@@ -165,10 +165,15 @@ namespace {projectName}
             // Copy relevant headers from source request
             foreach (var header in sourceRequest.Headers)
             {
-                // Skip headers that shouldn't be forwarded
+                // Skip headers that shouldn't be forwarded to the upstream service.
+                // Host/Content-Length/Transfer-Encoding are hop-by-hop headers.
+                // Origin/Referer are browser-context headers that can cause upstream
+                // services to treat API requests as storefront/CORS requests.
                 if (header.Key.Equals("Host", StringComparison.OrdinalIgnoreCase) ||
                     header.Key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase) ||
-                    header.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
+                    header.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase) ||
+                    header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase) ||
+                    header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
