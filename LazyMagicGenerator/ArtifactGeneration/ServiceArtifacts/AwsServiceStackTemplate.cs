@@ -113,7 +113,7 @@ namespace LazyMagic
 
                 ///////////////////////////////////////////////////////////////////////////////////////
                 /* Write Template */
-                File.WriteAllText(templatePath, templateBuilder.ToString());
+                WriteGeneratedFile(templatePath, templateBuilder.ToString());
 
                 ///////////////////////////////////////////////////////////////////////////////////////
                 // Exports

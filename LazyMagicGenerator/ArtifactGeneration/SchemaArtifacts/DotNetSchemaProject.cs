@@ -263,7 +263,7 @@ namespace LazyMagic
                     : classBody.ToString();
             }
             classFileContent = classFileContent.Replace("__Body__", classCode);
-            File.WriteAllText(filePath, ReplaceLineEndings(classFileContent));
+            WriteGeneratedFile(filePath, classFileContent);
         }
         private void GenerateDTOValidator(IGrouping<string, ClassDeclarationSyntax> classDeclaration, string nameSpace, string filePath)
         {
@@ -280,7 +280,7 @@ public partial class " + className + @"Validator : FluentValidation.AbstractVali
 }
 ";
                 classFileContent = classFileContent.Replace("__Body__", classCode);
-                File.WriteAllText(Path.Combine(filePath), ReplaceLineEndings(classFileContent));
+                WriteGeneratedFile(Path.Combine(filePath), classFileContent);
         }
         private void GenerateEnumDTO(IGrouping<object, EnumDeclarationSyntax> enumDeclaration, string nameSpace, string filePath)
         {
@@ -292,7 +292,7 @@ public partial class " + className + @"Validator : FluentValidation.AbstractVali
             foreach (var classBody in enumDeclaration)
                 classCode += classBody.ToFullString();
             classFileContent = classFileContent.Replace("__Body__", classCode);
-            File.WriteAllText(filePath, ReplaceLineEndings(classFileContent));
+            WriteGeneratedFile(filePath, classFileContent);
         }
         private void GenerateModel(IGrouping<string, ClassDeclarationSyntax> classDeclaration, string nameSpace, string filePath)
         {
@@ -310,7 +310,7 @@ public partial class " + className + @"Model : " + className + @",IRegisterObser
 }
 ";
                 classFileContent = classFileContent.Replace("__Body__", classCode);
-                File.WriteAllText(filePath, ReplaceLineEndings(classFileContent));
+                WriteGeneratedFile(filePath, classFileContent);
 
         }
         private void GenerateModelValidators(IGrouping<string, ClassDeclarationSyntax> classDeclaration, string nameSpace, string filePath)
@@ -336,7 +336,7 @@ public partial class " + className + @"ModelValidator : FluentValidation.Abstrac
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 ";
                 classFileContent = classFileContent.Replace("__Body__", classCode);
-                File.WriteAllText(filePath, ReplaceLineEndings(classFileContent));
+                WriteGeneratedFile(filePath, classFileContent);
 
         }
 

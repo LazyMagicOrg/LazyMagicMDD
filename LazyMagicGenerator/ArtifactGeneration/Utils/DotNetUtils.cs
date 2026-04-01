@@ -268,7 +268,7 @@ namespace LazyMagic
 //----------------------
 {usingsCode}
 ";
-            File.WriteAllText(filePath, usingsFileContent);
+            WriteGeneratedFile(filePath, usingsFileContent);
         }
         public static void GeneratePackagesPropsFile(List<string> packageReferences, string filePath)
         {
@@ -277,16 +277,18 @@ namespace LazyMagic
             {
                 // Check if it's a file path reference (contains path separators) or a NuGet package name
                 var isPathReference = packageRef.Contains('/') || packageRef.Contains('\\');
+                // Normalize to backslash path separators for cross-platform consistency
+                var normalizedRef = packageRef.Replace('/', '\\');
 
                 if (Path.IsPathRooted(packageRef))
                 {
                     // Absolute path - use as is
-                    packagePropsCode += $"<PackageReference Include=\"{packageRef}\" />\r\n";
+                    packagePropsCode += $"<PackageReference Include=\"{normalizedRef}\" />\r\n";
                 }
                 else if (isPathReference)
                 {
                     // Relative path - add SolutionDir prefix
-                    packagePropsCode += $"<PackageReference Include=\"$(SolutionDir){packageRef}\" />\r\n";
+                    packagePropsCode += $"<PackageReference Include=\"$(SolutionDir){normalizedRef}\" />\r\n";
                 }
                 else
                 {
@@ -302,15 +304,19 @@ namespace LazyMagic
         {packagePropsCode}
     </ItemGroup>
 </Project>";
-            File.WriteAllText(filePath, propsfilecontent);
+            WriteGeneratedFile(filePath, propsfilecontent);
         }
         public static void GenerateProjectsPropsFile(List<string> projectReferences, string filePath)
         {
             var projectPropsCode = "";
             foreach (var projectRef in projectReferences)
+            {
+                // Normalize to backslash path separators for cross-platform consistency
+                var normalizedRef = projectRef.Replace('/', '\\');
                 projectPropsCode += Path.IsPathRooted(projectRef)
-                    ? $"<ProjectReference Include=\"{projectRef}\" />\r\n"
-                    : $"<ProjectReference Include=\"$(SolutionDir){projectRef}\" />\r\n";
+                    ? $"<ProjectReference Include=\"{normalizedRef}\" />\r\n"
+                    : $"<ProjectReference Include=\"$(SolutionDir){normalizedRef}\" />\r\n";
+            }
 
             var propsfilecontent = $@"
 <Project>
@@ -319,7 +325,7 @@ namespace LazyMagic
         {projectPropsCode}
     </ItemGroup>
 </Project>";
-            File.WriteAllText(filePath, propsfilecontent);
+            WriteGeneratedFile(filePath, propsfilecontent);
         }
         public static void GenerateGlobalUsingFile(List<string> usings, string content, string filePath)
         {
@@ -334,7 +340,7 @@ namespace LazyMagic
             usings = usings.Distinct().ToList();    
             foreach (var usingName in usings)
                 usingsCode += $"global using {usingName};\r\n";
-            File.WriteAllText(filePath, usingsCode);
+            WriteGeneratedFile(filePath, usingsCode);
         }
         public static void GenerateLicenseFile(string licenseText, string filePath)
         {
@@ -398,14 +404,21 @@ namespace LazyMagic
         }
         public static string ReplaceLineEndings(string str)
         {
-            // Using stringbuilder
-            var sb = new StringBuilder(str.Length + 1000);
-            using (StreamReader sr = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(str))))
-            {
-                while (!sr.EndOfStream)
-                    sb.AppendLine(sr.ReadLine());
-            }
-            return sb.ToString();
+            // Normalize all line endings to the OS-native format for cross-platform consistency.
+            // First collapse everything to LF, then convert to Environment.NewLine.
+            var normalized = str.Replace("\r\n", "\n").Replace("\r", "\n");
+            if (Environment.NewLine != "\n")
+                normalized = normalized.Replace("\n", Environment.NewLine);
+            return normalized;
+        }
+
+        /// <summary>
+        /// Writes generated file content with normalized CRLF line endings.
+        /// Use this instead of File.WriteAllText for all generated (.g.*) files.
+        /// </summary>
+        public static void WriteGeneratedFile(string filePath, string content)
+        {
+            File.WriteAllText(filePath, ReplaceLineEndings(content));
         }
         
         /// <summary>

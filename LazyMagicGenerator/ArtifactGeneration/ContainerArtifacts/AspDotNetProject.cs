@@ -71,7 +71,7 @@ namespace LazyMagic
                         openApiSpecs.Add(controllerProject.ExportedOpenApiSpec);
                 var openApiSpec = await MergeApiFilesAsync(solution.SolutionRootFolderPath, openApiSpecs);
                 openApiSpec = openApiSpec.Replace("{prefix}", prefix);
-                File.WriteAllText(Path.Combine(targetProjectDir, "openapi.g.yaml"), openApiSpec);
+                WriteGeneratedFile(Path.Combine(targetProjectDir, "openapi.g.yaml"), openApiSpec);
 
                 GenerateConfigureSvcsFile(projectName, nameSpace, Path.Combine(targetProjectDir, "ConfigureSvcs.g.cs"));
 
@@ -137,7 +137,7 @@ public partial class Startup
 }}
 ";
 
-            File.WriteAllText(filePath, template);
+            WriteGeneratedFile(filePath, template);
         }
     }
 

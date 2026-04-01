@@ -1,6 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Text;
 
 namespace LazyMagic
 {
@@ -52,14 +52,12 @@ namespace LazyMagic
         // the LazyMagicVsExt project.
         public static string ReplaceLineEndings(string str)
         {
-            // Using stringbuilder
-            var sb = new StringBuilder(str.Length + 1000);
-            using (StreamReader sr = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(str))))
-            {
-                while (!sr.EndOfStream)
-                    sb.AppendLine(sr.ReadLine());
-            }
-            return sb.ToString();
+            // Normalize all line endings to the OS-native format for cross-platform consistency.
+            // First collapse everything to LF, then convert to Environment.NewLine.
+            var normalized = str.Replace("\r\n", "\n").Replace("\r", "\n");
+            if (Environment.NewLine != "\n")
+                normalized = normalized.Replace("\n", Environment.NewLine);
+            return normalized;
         }
     }
 }

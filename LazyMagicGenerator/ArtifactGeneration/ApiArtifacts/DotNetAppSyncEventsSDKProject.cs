@@ -162,7 +162,7 @@ public class AppSyncEventsClient : IAppSyncEventsClient
     }}
 }}";
 
-            File.WriteAllText(Path.Combine(targetProjectDir, "AppSyncEventsClient.g.cs"), clientCode);
+            WriteGeneratedFile(Path.Combine(targetProjectDir, "AppSyncEventsClient.g.cs"), clientCode);
         }
 
         private void GenerateSessionEventModels(string targetProjectDir, string nameSpace)
@@ -223,7 +223,7 @@ public class ErrorEvent : SessionEvent
     public string Error {{ get; set; }} = string.Empty;
 }}";
 
-            File.WriteAllText(Path.Combine(targetProjectDir, "SessionEventModels.g.cs"), modelsCode);
+            WriteGeneratedFile(Path.Combine(targetProjectDir, "SessionEventModels.g.cs"), modelsCode);
         }
 
         private void GenerateServiceRegistrationExtensions(string targetProjectDir, string nameSpace)
@@ -257,7 +257,7 @@ public static class ServiceCollectionExtensions
     }}
 }}";
 
-            File.WriteAllText(Path.Combine(targetProjectDir, "ServiceCollectionExtensions.g.cs"), extensionsCode);
+            WriteGeneratedFile(Path.Combine(targetProjectDir, "ServiceCollectionExtensions.g.cs"), extensionsCode);
         }
     }
 }

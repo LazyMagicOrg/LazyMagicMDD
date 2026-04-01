@@ -138,7 +138,7 @@ public partial class Startup
 }}
 ";
 
-            File.WriteAllText(filePath, template);
+            WriteGeneratedFile(filePath, template);
         }
 
     }

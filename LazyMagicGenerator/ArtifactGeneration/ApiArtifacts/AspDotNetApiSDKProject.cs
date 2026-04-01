@@ -130,7 +130,7 @@ namespace LazyMagic
                     if(!string.IsNullOrEmpty(aspDotNetProject.ExportedOpenApiSpec))
                         openApiSpecs.Add(aspDotNetProject.ExportedOpenApiSpec);
                 var openApiSpec = await MergeApiFilesAsync(solution.SolutionRootFolderPath, openApiSpecs);
-                File.WriteAllText(Path.Combine(targetProjectDir, "openapi.g.yaml"), openApiSpec);
+                WriteGeneratedFile(Path.Combine(targetProjectDir, "openapi.g.yaml"), openApiSpec);
 
                 OpenApiDocument openApiDocument = await ParseOpenApiYamlContent(openApiSpec);
                 // Add the apiPath to each path
@@ -293,7 +293,7 @@ namespace {nameSpace}
 #pragma warning restore 108
 ";
                     var moduleFilePath = Path.Combine(directory, $"{projectName}.{moduleName}.g.cs");
-                    File.WriteAllText(moduleFilePath, content);
+                    WriteGeneratedFile(moduleFilePath, content);
                 }
 
                 // Replace class members with only infrastructure (non-module) members
@@ -303,12 +303,12 @@ namespace {nameSpace}
 
             // Write the main class file (infrastructure only - no schema-specific types)
             var outputCode = root.ToFullString();
-            File.WriteAllText(filePath, outputCode);
+            WriteGeneratedFile(filePath, outputCode);
 
             // Generate and write our custom interface that inherits from module interfaces
             var interfaceCode = GenerateAggregateInterface(projectName, moduleNames);
             var interfaceFilePath = Path.Combine(directory, $"I{projectName}.g.cs");
-            File.WriteAllText(interfaceFilePath, interfaceCode);
+            WriteGeneratedFile(interfaceFilePath, interfaceCode);
         }
 
         private string GenerateAggregateInterface(string projectName, List<string> moduleNames)

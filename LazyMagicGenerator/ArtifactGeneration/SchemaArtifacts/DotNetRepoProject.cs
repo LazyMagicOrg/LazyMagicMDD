@@ -233,7 +233,7 @@ public static partial class {projectName}Extensions
 
 }}
 ";
-            File.WriteAllText(filePath, classbody);
+            WriteGeneratedFile(filePath, classbody);
         }
         private static void GenerateImplClassGenFile(IGrouping<string,ClassDeclarationSyntax> classDeclaration, string nameSpace, string filePath)
         {
@@ -253,7 +253,7 @@ public partial class {entityName}Repo : DYDBRepository<{entityName}>, I{entityNa
     public {entityName}Repo(IAmazonDynamoDB client) : base(client) {{}}
 }}
 ";
-            File.WriteAllText(filePath, classbody);
+            WriteGeneratedFile(filePath, classbody);
         }
     }
 }

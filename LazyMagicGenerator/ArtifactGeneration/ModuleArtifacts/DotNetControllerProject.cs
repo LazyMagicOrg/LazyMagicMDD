@@ -253,7 +253,7 @@ namespace LazyMagic
                 // Extract and save the Interface file
                 // RemoveAsyncFromInterfaceMethodNames(ref root); // Removed to keep Async suffix for proper inheritance with client SDK
                 var interfaceCode = GetInterfaceCode(root);
-                File.WriteAllText(Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"I{projectName}Controller") + ".g.cs", interfaceCode);
+                WriteGeneratedFile(Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"I{projectName}Controller") + ".g.cs", interfaceCode);
 
                 // Client interface generation moved to DotNetHttpApiSDKProject
 
@@ -295,13 +295,13 @@ public partial class {projectName}Controller : {projectName}ControllerBase {{}}
                 root = CSharpSyntaxTree.ParseText(classCode).GetCompilationUnitRoot();
                 InsertConstructor(ref root, projectName + "Controller", interfaces, Dependencies, OperationType);
                 classCode = root.ToFullString();
-                File.WriteAllText(Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Controller") + ".g.cs", classCode);
+                WriteGeneratedFile(Path.Combine(solution.SolutionRootFolderPath, OutputFolder, projectName, $"{projectName}Controller") + ".g.cs", classCode);
 
 
                 // Exports
                 // Write Modified OpenApi specs to file
                 var exportedOpenApiSpec = Path.Combine(OutputFolder, projectName, "openapi.g.yaml");
-                File.WriteAllText(Path.Combine(solution.SolutionRootFolderPath, exportedOpenApiSpec), openApiDocumentYanl);
+                WriteGeneratedFile(Path.Combine(solution.SolutionRootFolderPath, exportedOpenApiSpec), openApiDocumentYanl);
 
                 ExportedProjectPath = Path.Combine(OutputFolder, projectName, projectName) + ".csproj";
                 ExportedServiceRegistrations = new List<string> { $"Add{projectName}" };
@@ -419,12 +419,12 @@ global using LazyMagic.Shared;
             // Generate the client interface from the same OpenAPI document
             var interfaceCode = await GenerateModuleClientInterface(directive.Key, nameSpace, openApiDocument);
             var interfaceFilePath = Path.Combine(targetProjectDir, $"I{directive.Key}Client.g.cs");
-            File.WriteAllText(interfaceFilePath, interfaceCode);
+            WriteGeneratedFile(interfaceFilePath, interfaceCode);
 
             // Generate FileParameter class (needed for file upload operations)
             var fileParameterCode = GenerateFileParameterClass(nameSpace);
             var fileParameterFilePath = Path.Combine(targetProjectDir, "FileParameter.g.cs");
-            File.WriteAllText(fileParameterFilePath, fileParameterCode);
+            WriteGeneratedFile(fileParameterFilePath, fileParameterCode);
 
             // Set export
             ExportedClientInterfaceProjectPath = Path.Combine(clientOutputFolder, clientProjectName, clientProjectName + ".csproj");
@@ -923,7 +923,7 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
     
 }}
 ";
-            File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
+            WriteGeneratedFile(filePath, code); // Write the controller class file
         }
         private static void GenerateBaseClass(ref CompilationUnitSyntax root,
             OpenApiDocument openApiDocument,
@@ -964,7 +964,7 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
 
             FixNswagSyntax(code); // NSwag seems to have a _template bug. Microsoft.AspNetCore.Mvc.HttpGET should be Microsoft.AspNetCore.Mvc.HttpGet
 
-            File.WriteAllText(filePath, ReplaceLineEndings(code)); // Write the controller class file
+            WriteGeneratedFile(filePath, code); // Write the controller class file
         }
 
         /// <summary>
@@ -1003,7 +1003,7 @@ public partial class {projectName}Authorization : LzAuthorization, I{projectName
             var code = flowThroughHelpersTpl
                 .Replace("{projectName}", projectName)
                 .Replace("{modulePath}", modulePath);
-            File.WriteAllText(filePath, ReplaceLineEndings(code));
+            WriteGeneratedFile(filePath, code);
         }
         private static void RemoveAsyncFromInterfaceMethodNames(ref CompilationUnitSyntax root)
         { 
@@ -2313,7 +2313,7 @@ $@"
     }}
 }}
 ";
-            File.WriteAllText(filePath, classbody);
+            WriteGeneratedFile(filePath, classbody);
         }
 
         /* Currently unused Methods */
@@ -2400,7 +2400,7 @@ namespace {projectName}
 ";
 
 
-            File.WriteAllText(filePath, classbody);
+            WriteGeneratedFile(filePath, classbody);
         }
         private static string UpCaseFirstChar(string token)
         {
